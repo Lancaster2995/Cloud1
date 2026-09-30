@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace = "io.github.lancaster2995.relevo"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "io.github.lancaster2995.relevo"
+        minSdk = 29
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
+    }
+
+    // Fixed key committed on purpose: this app is sideloaded, and every build (CI or
+    // tools/build-local.sh) must carry the same signature so updates install over each other.
+    signingConfigs {
+        sideload {
+            storeFile file("relevo.keystore")
+            storePassword "relevo-sideload"
+            keyAlias "relevo"
+            keyPassword "relevo-sideload"
+            storeType "pkcs12"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.sideload
+        }
+        debug {
+            signingConfig signingConfigs.sideload
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            returnDefaultValues = true
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.robolectric:robolectric:4.14.1"
+}

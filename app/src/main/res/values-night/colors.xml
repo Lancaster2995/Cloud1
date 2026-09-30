@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#191817</color>
+    <color name="surface">#252422</color>
+    <color name="surface2">#2F2D2A</color>
+    <color name="border">#3A3834</color>
+    <color name="text">#F1EEE8</color>
+    <color name="text2">#A9A49B</color>
+    <color name="accent">#E07F5C</color>
+    <color name="on_accent">#1A1110</color>
+    <color name="ripple">#33E07F5C</color>
+    <color name="banner">#3A2A22</color>
+    <color name="ok">#72C177</color>
+    <color name="warn">#FFB060</color>
+    <color name="danger">#F07070</color>
+    <color name="ic_bg">#1F1E1D</color>
+</resources>

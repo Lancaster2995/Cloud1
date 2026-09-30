@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Relevo</string>
+    <string name="channel_ready">Cuentas disponibles</string>
+    <string name="channel_ready_desc">Aviso cuando una cuenta en pausa vuelve a estar disponible</string>
+    <string name="window_1">Relevo · ventana 1</string>
+    <string name="window_2">Relevo · ventana 2</string>
+    <string name="window_3">Relevo · ventana 3</string>
+    <string name="window_4">Relevo · ventana 4</string>
+    <string name="window_5">Relevo · ventana 5</string>
+    <string name="window_6">Relevo · ventana 6</string>
+    <string name="window_7">Relevo · ventana 7</string>
+    <string name="window_8">Relevo · ventana 8</string>
+</resources>

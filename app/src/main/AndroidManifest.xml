@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:name=".RelevoApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:resizeableActivity="true"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Relevo">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ProjectActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- One activity per account slot: own process (isolated WebView cookies) and own task
+             (separate window in Recents / split screen / DeX). -->
+        <activity
+            android:name=".slots.Slot1Activity"
+            android:process=":s1"
+            android:taskAffinity="io.github.lancaster2995.relevo.s1"
+            android:launchMode="singleTask"
+            android:label="@string/window_1"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name=".slots.Slot2Activity"
+            android:process=":s2"
+            android:taskAffinity="io.github.lancaster2995.relevo.s2"
+            android:launchMode="singleTask"
+            android:label="@string/window_2"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name=".slots.Slot3Activity"
+            android:process=":s3"
+            android:taskAffinity="io.github.lancaster2995.relevo.s3"
+            android:launchMode="singleTask"
+            android:label="@string/window_3"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name=".slots.Slot4Activity"
+            android:process=":s4"
+            android:taskAffinity="io.github.lancaster2995.relevo.s4"
+            android:launchMode="singleTask"
+            android:label="@string/window_4"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name=".slots.Slot5Activity"
+            android:process=":s5"
+            android:taskAffinity="io.github.lancaster2995.relevo.s5"
+            android:launchMode="singleTask"
+            android:label="@string/window_5"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name=".slots.Slot6Activity"
+            android:process=":s6"
+            android:taskAffinity="io.github.lancaster2995.relevo.s6"
+            android:launchMode="singleTask"
+            android:label="@string/window_6"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name=".slots.Slot7Activity"
+            android:process=":s7"
+            android:taskAffinity="io.github.lancaster2995.relevo.s7"
+            android:launchMode="singleTask"
+            android:label="@string/window_7"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name=".slots.Slot8Activity"
+            android:process=":s8"
+            android:taskAffinity="io.github.lancaster2995.relevo.s8"
+            android:launchMode="singleTask"
+            android:label="@string/window_8"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
