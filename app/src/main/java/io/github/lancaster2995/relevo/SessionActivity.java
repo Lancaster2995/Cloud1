@@ -288,8 +288,10 @@ public abstract class SessionActivity extends Activity {
         Data.Project pending = null;
         for (Data.Project p : d.projects) if (p.pendingSlot == slot()) pending = p;
         if (pending != null) {
-            bannerText.setText("Traspaso pendiente: «" + pending.name + "» (" + pending.progress + "%). "
-                    + "Abre un chat nuevo e inserta el prompt para continuar aquí.");
+            bannerText.setText((pending.hasState()
+                    ? "Traspaso pendiente: «" + pending.name + "» (" + pending.progress + "%)."
+                    : "Proyecto nuevo asignado a esta cuenta: «" + pending.name + "».")
+                    + " Pulsa «Insertar prompt» para continuarlo aquí.");
             banner.setTag(pending.id);
             banner.setVisibility(View.VISIBLE);
         } else {
