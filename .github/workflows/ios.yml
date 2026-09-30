@@ -1,0 +1,107 @@
+name: Build iOS app
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Simulator
+        id: sim
+        run: |
+          UDID=$(python3 scripts/pick-simulator.py)
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep "$UDID"
+
+      - name: Unit tests
+        run: |
+          if ! xcodebuild test -project Relevo.xcodeproj -scheme Relevo \
+               -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath build/sim \
+               CODE_SIGNING_ALLOWED=NO > test.log 2>&1; then
+            grep -E "error:|Test Case .* failed|XCTAssert" test.log | sort -u | head -80
+            tail -40 test.log
+            exit 1
+          fi
+          grep -E "Test Suite 'All tests'|Executed [0-9]+ tests" test.log | tail -5
+
+      - name: Screenshots
+        continue-on-error: true
+        run: scripts/screenshots.sh "${{ steps.sim.outputs.udid }}" build/sim/Build/Products/Debug-iphonesimulator/Relevo.app ../docs/screens
+
+      - name: Unsigned IPA
+        run: |
+          if ! xcodebuild build -project Relevo.xcodeproj -scheme Relevo -configuration Release -sdk iphoneos \
+               -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" > device.log 2>&1; then
+            grep -E "error:" device.log | sort -u | head -60
+            tail -30 device.log
+            exit 1
+          fi
+          rm -rf Payload && mkdir Payload
+          cp -R build/device/Build/Products/Release-iphoneos/Relevo.app Payload/
+          zip -qry Relevo.ipa Payload
+          ls -la Relevo.ipa
+
+      - name: Version
+        id: version
+        run: echo "name=$(grep -m1 'MARKETING_VERSION' project.yml | sed -E 's/.*"([^"]+)".*/\1/')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Relevo-iOS-${{ steps.version.outputs.name }}
+          path: ios/Relevo.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-screens
+          path: docs/screens/ios-*.png
+
+      - name: Commit IPA and screenshots
+        if: github.event_name == 'push'
+        working-directory: .
+        run: |
+          mkdir -p dist
+          cp ios/Relevo.ipa dist/Relevo.ipa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/Relevo.ipa
+          git add docs/screens 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Update dist/Relevo.ipa and iOS screenshots (CI build ${GITHUB_SHA::7})"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}" || echo "Branch moved on; the next build will update them"
+          fi
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-v${{ steps.version.outputs.name }}
+          name: Relevo iOS ${{ steps.version.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          files: ios/Relevo.ipa
+          body: |
+            Relevo para iPhone y iPad (iOS 17 o superior), compilado por GitHub Actions desde `${{ github.sha }}`.
+
+            El IPA no está firmado: instálalo con **Sideloadly** o **AltStore** desde tu PC con Windows usando tu Apple ID
+            (ver el README del repositorio). Con un Apple ID gratuito la app caduca a los 7 días y hay que volver a instalarla
+            o refrescarla (AltStore lo hace solo).
