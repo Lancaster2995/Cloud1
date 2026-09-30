@@ -1,0 +1,102 @@
+name: Build Windows app
+
+on:
+  push:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+      - name: End-to-end test (real Electron windows)
+        run: xvfb-run -a -s "-screen 0 1600x1000x24" npm run e2e
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-screens
+          path: desktop/test-results/screens
+
+      - name: Commit screenshots
+        if: github.event_name == 'push'
+        working-directory: .
+        run: |
+          mkdir -p docs/screens
+          cp desktop/test-results/screens/*.png docs/screens/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screens
+          if ! git diff --cached --quiet; then
+            git commit -m "Update desktop screenshots (CI build ${GITHUB_SHA::7})"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push origin "HEAD:${GITHUB_REF_NAME}" || echo "Branch moved on; the next build will update them"
+          fi
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+      - name: Build installer and portable exe
+        run: npx electron-builder --win nsis portable --x64 --publish never
+
+      - name: Version
+        id: version
+        shell: bash
+        run: echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Relevo-Windows-${{ steps.version.outputs.name }}
+          path: |
+            desktop/release/Relevo-Setup-*.exe
+            desktop/release/Relevo-*-portable.exe
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-v${{ steps.version.outputs.name }}
+          name: Relevo Windows ${{ steps.version.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: |
+            desktop/release/Relevo-Setup-${{ steps.version.outputs.name }}.exe
+            desktop/release/Relevo-${{ steps.version.outputs.name }}-portable.exe
+          body: |
+            Relevo para Windows 10/11 (64 bits), compilado por GitHub Actions desde `${{ github.sha }}`.
+
+            - **Relevo-Setup-${{ steps.version.outputs.name }}.exe**: instalador (crea acceso directo en el escritorio y en Inicio).
+            - **Relevo-${{ steps.version.outputs.name }}-portable.exe**: versión portable, sin instalar.
+
+            Windows puede mostrar «Windows protegió su PC» porque el ejecutable no está firmado: pulsa «Más información» → «Ejecutar de todas formas».

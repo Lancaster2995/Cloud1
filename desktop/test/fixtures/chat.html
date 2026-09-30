@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Chat de prueba</title>
+<style>
+  :root { --bg:#faf9f5; --card:#fff; --text:#1f1e1d; --muted:#6b665e; --border:#e5e1d8; --user:#f0ece4; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#262624; --card:#30302e; --text:#f1eee8; --muted:#a9a49b; --border:#3d3d3a; --user:#1f1e1d; } }
+  body { margin:0; font:15px/1.55 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; height:100vh; }
+  #log { flex:1; overflow:auto; padding:24px 0 12px; }
+  .msg { max-width:720px; margin:0 auto 14px; padding:0 20px; }
+  .user .bubble { background:var(--user); border-radius:14px; padding:10px 14px; display:inline-block; max-width:85%; white-space:pre-wrap; max-height:120px; overflow:hidden; }
+  .user { text-align:right; }
+  .user .bubble { text-align:left; }
+  pre { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; white-space:pre-wrap; font-size:13px; }
+  .composer { max-width:720px; width:calc(100% - 40px); margin:0 auto 18px; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:10px 12px; display:flex; gap:8px; align-items:flex-end; }
+  .ProseMirror { flex:1; min-height:24px; max-height:160px; overflow:auto; outline:none; white-space:pre-wrap; }
+  .ProseMirror:empty:before { content:'Escribe a Claude…'; color:var(--muted); }
+  #send { border:0; background:#c96442; color:#fff; border-radius:10px; width:36px; height:36px; font-size:18px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="log"></div>
+<div class="composer">
+  <div class="ProseMirror" contenteditable="true" role="textbox"></div>
+  <button id="send" title="Enviar">↑</button>
+</div>
+<script>
+  // Minimal stand-in for a chat page: a rich-text box that handles paste like ProseMirror.
+  const box = document.querySelector('.ProseMirror');
+  const log = document.getElementById('log');
+  box.addEventListener('paste', (e) => {
+    const text = e.clipboardData && e.clipboardData.getData('text/plain');
+    if (!text) return;
+    e.preventDefault();
+    box.textContent += text;
+  });
+  function add(cls, node) {
+    const m = document.createElement('div');
+    m.className = 'msg ' + cls;
+    m.appendChild(node);
+    log.appendChild(m);
+    log.scrollTop = log.scrollHeight;
+  }
+  document.getElementById('send').addEventListener('click', () => {
+    const text = box.innerText.trim();
+    if (!text) return;
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    b.textContent = text;
+    add('user', b);
+    box.textContent = '';
+    setTimeout(() => {
+      const answer = document.createElement('div');
+      if (text.startsWith('CHECKPOINT')) {
+        const pre = document.createElement('pre');
+        pre.textContent = ['<<<ESTADO', 'PROYECTO: App de inventario', 'PROGRESO: 60%',
+          'RESUMEN: Escáner funcionando; falta el reporte de stock bajo.', 'HECHO:', '- Modelo de datos', '- API REST', '- Pantalla de escaneo',
+          'EN_PROGRESO:', '- Reporte de stock bajo (consulta lista, falta la vista)', 'SIGUIENTES_PASOS:', '- Vista del reporte', '- Exportar a CSV',
+          'DECISIONES:', '- SQLite local + sincronización', 'BLOQUEOS:', '- ninguno', 'ARCHIVOS_CLAVE:', '- app/scan.ts: escáner',
+          'CONTEXTO_EXTRA:', 'npm run dev', 'ESTADO>>>'].join('\n');
+        answer.appendChild(pre);
+      } else {
+        answer.textContent = 'Entendido. Plan: 1) modelo de datos, 2) API, 3) pantalla de escaneo, 4) reportes. Empiezo por el modelo de datos…';
+      }
+      add('assistant', answer);
+    }, 150);
+  });
+</script>
+</body>
+</html>

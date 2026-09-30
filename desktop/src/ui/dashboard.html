@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'">
+  <title>Relevo</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="icon.png" alt="" width="36" height="36">
+      <div>
+        <h1>Relevo</h1>
+        <p class="muted">Varias sesiones de Claude en paralelo, un proyecto que pasa de cuenta en cuenta hasta terminarse.</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" data-tab="projects">Proyectos</button>
+      <button class="tab" data-tab="accounts">Cuentas</button>
+      <button class="tab" data-tab="guide">Guía y ajustes</button>
+    </nav>
+  </header>
+  <main id="content"></main>
+  <script src="../shared/core.js"></script>
+  <script src="common.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

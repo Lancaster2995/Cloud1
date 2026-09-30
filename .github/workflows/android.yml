@@ -2,10 +2,13 @@ name: Build APK
 
 on:
   push:
-    paths-ignore:
-      - 'dist/**'
-      - 'docs/**'
-      - '**.md'
+    paths:
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - '.github/workflows/android.yml'
   workflow_dispatch:
 
 permissions:
@@ -62,6 +65,7 @@ jobs:
           git add docs/screens 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "Update dist/Relevo.apk and screenshots (CI build ${GITHUB_SHA::7})"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
             git push origin "HEAD:${GITHUB_REF_NAME}" || echo "Branch moved on; the next build will update dist/"
           fi
 
@@ -69,9 +73,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.name }}
-          name: Relevo ${{ steps.version.outputs.name }}
+          name: Relevo Android ${{ steps.version.outputs.name }}
           target_commitish: ${{ github.sha }}
-          make_latest: true
+          make_latest: false
           files: Relevo.apk
           body: |
             APK de Relevo compilado por GitHub Actions desde `${{ github.sha }}`.

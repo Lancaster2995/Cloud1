@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'">
+  <title>Relevo</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="toolbar.css">
+</head>
+<body>
+  <div id="bar">
+    <div class="strip" id="strip"></div>
+    <div class="line">
+      <div class="nav">
+        <button class="btn icon" id="back" title="Atrás (Alt+←)">←</button>
+        <button class="btn icon" id="forward" title="Adelante (Alt+→)">→</button>
+        <button class="btn icon" id="reload" title="Recargar (Ctrl+R)">⟳</button>
+      </div>
+      <div class="who">
+        <span class="dot" id="dot"></span>
+        <strong id="account"></strong>
+      </div>
+      <select id="project" title="Proyecto en el que trabaja esta ventana"></select>
+      <div class="actions">
+        <button class="btn" data-act="handoff" title="Inserta el prompt de inicio o de continuación">📨 Traspaso</button>
+        <button class="btn" data-act="checkpoint" title="Pide a Claude el bloque de estado">🧭 Pedir estado</button>
+        <button class="btn" data-act="save" title="Guarda el último bloque de estado de la conversación">💾 Guardar</button>
+        <button class="btn primary" data-act="transfer" title="Pasa el proyecto a otra cuenta">⇄ Pasar</button>
+      </div>
+      <button class="btn icon" id="home" title="Panel principal (Ctrl+Shift+H)">▦</button>
+      <button class="btn icon" id="more" title="Más opciones">⋯</button>
+    </div>
+    <div class="status" id="status" role="status" hidden></div>
+    <div class="banner" id="banner" hidden>
+      <span id="bannerText"></span>
+      <span class="spacer"></span>
+      <button class="btn quiet" id="dismiss">Descartar</button>
+      <button class="btn primary" id="insertPending">Insertar prompt</button>
+    </div>
+    <div class="loading" id="loading" hidden></div>
+  </div>
+  <script src="../shared/core.js"></script>
+  <script src="common.js"></script>
+  <script src="toolbar.js"></script>
+</body>
+</html>
