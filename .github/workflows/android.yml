@@ -4,6 +4,7 @@ on:
   push:
     paths-ignore:
       - 'dist/**'
+      - 'docs/**'
       - '**.md'
   workflow_dispatch:
 
@@ -29,6 +30,10 @@ jobs:
           ./gradlew --no-daemon testDebugUnitTest assembleRelease
           cp app/build/outputs/apk/release/app-release.apk Relevo.apk
 
+      - name: Screenshots
+        continue-on-error: true
+        run: ./gradlew --no-daemon testDebugUnitTest -Pscreenshots --tests '*ScreenshotTest'
+
       - name: Version
         id: version
         run: echo "name=$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle | head -1)" >> "$GITHUB_OUTPUT"
@@ -44,6 +49,21 @@ jobs:
         with:
           name: test-report
           path: app/build/reports/tests/
+
+      - name: Commit APK and screenshots
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p dist docs/screens
+          cp Relevo.apk dist/Relevo.apk
+          cp app/build/screens/*.png docs/screens/ 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/Relevo.apk
+          git add docs/screens 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "Update dist/Relevo.apk and screenshots (CI build ${GITHUB_SHA::7})"
+            git push origin "HEAD:${GITHUB_REF_NAME}" || echo "Branch moved on; the next build will update dist/"
+          fi
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

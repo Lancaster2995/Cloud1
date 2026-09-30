@@ -10,6 +10,7 @@ import android.app.AlertDialog;
 import android.app.Application;
 import android.app.NotificationManager;
 import android.content.Intent;
+import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
@@ -111,6 +112,8 @@ public class AppSmokeTest {
         AlertDialog dlg = (AlertDialog) ShadowAlertDialog.getLatestDialog();
         assertNotNull(dlg);
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+        // AlertDialog delivers button clicks through the main looper.
+        shadowOf(Looper.getMainLooper()).idle();
         assertEquals(2, Store.load(app).project(projectId).pendingSlot);
     }
 
