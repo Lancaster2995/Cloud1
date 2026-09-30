@@ -31,7 +31,7 @@
         <activity
             android:name=".ProjectActivity"
             android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize|stateHidden" />
 
         <!-- One activity per account slot: own process (isolated WebView cookies) and own task
              (separate window in Recents / split screen / DeX). -->

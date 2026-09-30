@@ -7,6 +7,13 @@ App Android (APK) para trabajar con **varias sesiones de Claude a la vez, cada u
 - **Traspaso entre cuentas**: con un toque pides el estado a Claude, lo guardas y lo pasas a otra cuenta. La ventana destino te ofrece el prompt de continuación, listo en el cuadro de mensaje.
 - **Pausas por límite**: marca una cuenta en pausa (1–24 h u hora exacta) y recibe un aviso cuando vuelve a estar disponible.
 
+<p>
+  <img src="docs/screens/1-proyectos.png" width="24%" alt="Proyectos">
+  <img src="docs/screens/2-cuentas.png" width="24%" alt="Cuentas">
+  <img src="docs/screens/4-ventana-sesion.png" width="24%" alt="Ventana de sesión">
+  <img src="docs/screens/6-proyecto.png" width="24%" alt="Detalle del proyecto">
+</p>
+
 ## Instalar
 
 1. Descarga [`dist/Relevo.apk`](dist/Relevo.apk) en el teléfono (o el `Relevo.apk` de la última *Release* del repositorio, que compila GitHub Actions).
@@ -33,7 +40,7 @@ Pestaña **Proyectos → + Nuevo proyecto** (nombre, objetivo y, si hay código,
 | 🧭 **Pedir estado** | Inserta el mensaje `CHECKPOINT`, que pide a Claude el bloque `<<<ESTADO … ESTADO>>>`. |
 | 💾 **Guardar** | Lee el bloque más reciente de la conversación (o del portapapeles) y lo guarda como checkpoint con su % de progreso. |
 | ⇄ **Pasar** | Guarda el estado visible, eliges la cuenta destino y si pausar la actual. Se registra el traspaso y se abre la otra ventana. |
-| ⋮ | Recargar, chat nuevo, Claude Code, detalles del proyecto, pausar, modo escritorio, pegar estado a mano, abrir enlace, cerrar sesión, cerrar ventana. |
+| ⋮ | Recargar, chat nuevo, Claude Code, detalles del proyecto, abrir otra cuenta al lado, pausar, modo escritorio, pegar estado a mano, abrir enlace, cerrar sesión, cerrar ventana. |
 
 El selector de arriba indica en qué proyecto trabaja esa ventana; cada cuenta puede llevar un proyecto distinto al mismo tiempo.
 

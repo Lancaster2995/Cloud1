@@ -43,6 +43,8 @@ public class ProjectActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         content = Ui.vbox(this);
         content.setPadding(Ui.dp(this, 16), 0, Ui.dp(this, 16), Ui.dp(this, 32));
+        content.setFocusableInTouchMode(true);
+        content.setDescendantFocusability(ViewGroup.FOCUS_BEFORE_DESCENDANTS);
         scroll.addView(content, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -117,7 +119,7 @@ public class ProjectActivity extends Activity {
         state.setMaxLines(18);
         st.addView(state, Ui.matchWrap());
         st.addView(Ui.buttonRow(this,
-                Ui.button(this, "Pegar del portapapeles", Ui.Style.NORMAL, v -> {
+                Ui.button(this, "Pegar", Ui.Style.NORMAL, v -> {
                     StateBlock.Result r = StateBlock.find(Ui.paste(this), false);
                     if (r.block == null) {
                         Ui.toast(this, "El portapapeles no tiene un bloque <<<ESTADO");

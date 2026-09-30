@@ -437,6 +437,7 @@ public abstract class SessionActivity extends Activity {
         m.add(0, 3, 0, "Claude Code");
         m.add(0, 4, 0, "Detalles del proyecto");
         m.add(0, 5, 0, "Panel principal");
+        m.add(0, 15, 0, "Abrir otra cuenta al lado…");
         m.add(0, 6, 0, "Pausar esta cuenta…");
         m.add(0, 7, 0, "Modo escritorio").setCheckable(true).setChecked(a.desktopMode);
         m.add(0, 8, 0, "Insertar prompts en el chat").setCheckable(true).setChecked(d.autoInsert);
@@ -499,10 +500,32 @@ public abstract class SessionActivity extends Activity {
                 case 14:
                     openLinkDialog();
                     return true;
+                case 15:
+                    openOtherAdjacent();
+                    return true;
             }
             return false;
         });
         pm.show();
+    }
+
+    /** Opens another account's window next to this one (split screen / free-form windows). */
+    private void openOtherAdjacent() {
+        Data d = Store.load(this);
+        long now = System.currentTimeMillis();
+        List<Data.Account> others = new ArrayList<>();
+        for (Data.Account acc : d.sortedAccounts()) if (acc.slot != slot()) others.add(acc);
+        if (others.isEmpty()) {
+            Ui.toast(this, "Agrega otra cuenta en el panel principal");
+            return;
+        }
+        String[] labels = new String[others.size()];
+        for (int i = 0; i < others.size(); i++) labels[i] = Dialogs.accountLabel(others.get(i), now);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Abrir al lado")
+                .setItems(labels, (dlg, which) -> Slots.open(this, others.get(which).slot, true))
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     /** Sign-in links from e-mail open in the default browser; this loads them in this window. */
