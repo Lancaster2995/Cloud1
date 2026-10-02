@@ -59,20 +59,37 @@ async function launch(env) {
   return { app, shell, dash };
 }
 
-/** Captures the whole Relevo window (tab strip + whatever is on screen below it) as one PNG. */
+/**
+ * Captures the whole Relevo window (tab strip + whatever is on screen below it) as one PNG.
+ * Screenshots only illustrate the README: if the compositor has no frame yet (UnknownVizError
+ * under xvfb right after a resize) it retries and finally skips the picture without failing.
+ */
 async function shot(app, dash, file) {
   const parts = await app.evaluate(async ({ BrowserWindow }) => {
+    const grab = async (wc, rect) => {
+      for (let i = 0; ; i++) {
+        try {
+          return (await wc.capturePage(rect)).toDataURL();
+        } catch (e) {
+          if (i >= 5) throw e;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+    };
     const win = BrowserWindow.getAllWindows()[0];
     const { width, height } = win.getContentBounds();
-    const shots = [{ x: 0, y: 0, w: width, h: height, src: (await win.webContents.capturePage()).toDataURL() }];
+    const shots = [{ x: 0, y: 0, w: width, h: height, src: await grab(win.webContents) }];
     for (const v of win.contentView.children) {
       const b = v.getBounds();
       if (!v.getVisible() || !v.webContents || !b.width || !b.height) continue;
-      const img = await v.webContents.capturePage({ x: 0, y: 0, width: b.width, height: b.height });
-      shots.push({ x: b.x, y: b.y, w: b.width, h: b.height, src: img.toDataURL() });
+      shots.push({ x: b.x, y: b.y, w: b.width, h: b.height, src: await grab(v.webContents, { x: 0, y: 0, width: b.width, height: b.height }) });
     }
     return { width, height, shots };
+  }).catch((e) => {
+    console.warn('captura omitida (' + file + '): ' + e.message);
+    return null;
   });
+  if (!parts) return;
   const png = await dash.evaluate(async (p) => {
     const c = document.createElement('canvas');
     c.width = p.width;

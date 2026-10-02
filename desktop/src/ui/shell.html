@@ -34,6 +34,7 @@
       background: transparent; color: var(--text2); font-size: 17px; cursor: pointer;
     }
     .add:hover { background: var(--surface); color: var(--text); }
+    .ver { flex: none; font-size: 12px; color: var(--text2); white-space: nowrap; }
     .modes { flex: none; display: flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
     .modes button { border: 0; background: transparent; padding: 5px 12px; color: var(--text2); cursor: pointer; }
     .modes button + button { border-left: 1px solid var(--border); }
@@ -46,6 +47,7 @@
 <body>
   <header class="strip">
     <nav class="tabs" id="tabs" role="tablist" aria-label="Panel y cuentas"></nav>
+    <span class="ver" id="ver" title="Versión de Relevo instalada"></span>
     <div class="modes" role="group" aria-label="Cuántas cuentas ver a la vez">
       <button data-mode="single" title="Una cuenta a la vez">Una</button>
       <button data-mode="split" title="Dos cuentas lado a lado">Dos</button>

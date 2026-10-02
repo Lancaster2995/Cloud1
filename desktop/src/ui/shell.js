@@ -54,6 +54,7 @@
       api('tab:mode', b.dataset.mode);
     });
   }
+  api('info').then((i) => { if (i) document.getElementById('ver').textContent = 'Relevo ' + i.version; });
   window.relevo.on('data', (d) => { data = d; render(); });
   window.relevo.on('tabs', (t) => { tabs = t; render(); });
   Promise.all([api('data'), api('tabs')]).then(([d, t]) => { data = d || data; tabs = t || tabs; render(); });
