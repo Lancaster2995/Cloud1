@@ -1,6 +1,8 @@
-/* Relevo for Firefox, background: toolbar button and "account available again" notices. */
+/* Relevo for Firefox, background: toolbar button, automatic status saving and "available again" notices. */
 'use strict';
 const C = self.RelevoCore;
+const M = self.RelevoModel;
+const J = self.RelevoInject;
 
 browser.browserAction.onClicked.addListener(() => browser.sidebarAction.toggle());
 
@@ -24,5 +26,35 @@ browser.alarms.onAlarm.addListener(async (alarm) => {
   });
 });
 
+/**
+ * Projects with the automatic state ask Claude to end every answer with the status block; this
+ * keeps the newest one from the account that holds each project (its most recently used Claude
+ * tab), so running out of messages loses nothing. Only blocks that name the project.
+ * ponytail: same read-modify-write without a lock as the sidebar.
+ */
+let autoSaving = false;
+async function autoSave() {
+  if (autoSaving) return;
+  autoSaving = true;
+  try {
+    const d = M.defaults((await browser.storage.local.get('relevo')).relevo);
+    let changed = false;
+    for (const a of d.accounts) {
+      const p = M.project(d, a.activeProjectId);
+      if (!a.cookieStoreId || !p || !p.autoState || p.currentSlot !== a.slot || p.pendingSlot) continue;
+      const tabs = await browser.tabs.query({ cookieStoreId: a.cookieStoreId, url: 'https://claude.ai/*' });
+      const tab = tabs.filter((t) => !t.discarded).sort((x, y) => y.lastAccessed - x.lastAccessed)[0];
+      if (!tab) continue;
+      const [text] = await browser.tabs.executeScript(tab.id, { code: J.PAGE_TEXT }).catch(() => ['']);
+      const { block } = C.find(String(text || ''), true);
+      if (block && C.isAbout(block, p) && M.saveCheckpoint(d, p.id, a.slot, block, 'auto')) changed = true;
+    }
+    if (changed) await browser.storage.local.set({ relevo: d });
+  } finally {
+    autoSaving = false;
+  }
+}
+
 browser.storage.onChanged.addListener((changes) => { if (changes.relevo) schedulePauses(); });
 schedulePauses();
+setInterval(autoSave, 20000);

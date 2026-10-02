@@ -506,6 +506,31 @@ async function readPageBlock(s) {
   }
 }
 
+// ------------------------------------------------------------------ automatic checkpoints
+
+/**
+ * Projects with the automatic state ask Claude to end every answer with the status block; this
+ * keeps the newest one of the account that holds each project, so running out of messages
+ * loses nothing. Only blocks that name the project, and never from an account it already left.
+ */
+let autoSaving = false;
+async function autoSave() {
+  if (autoSaving) return;
+  autoSaving = true;
+  try {
+    for (const s of [...sessions.values()]) {
+      const p = s.kind === 'integrated' ? currentProjectOf(s.slot) : null;
+      if (!p || !p.autoState || p.currentSlot !== s.slot || p.pendingSlot) continue;
+      const { block } = await readPageBlock(s);
+      if (!block || !core.isAbout(block, p) || block === core.normalize(p.state)) continue;
+      store.edit((d) => model.saveCheckpoint(d, p.id, s.slot, block, 'auto'));
+      s.send('autosaved', core.progress(block));
+    }
+  } finally {
+    autoSaving = false;
+  }
+}
+
 // ------------------------------------------------------------------ IPC
 
 function handle(channel, fn) {
@@ -745,8 +770,9 @@ function registerIpc() {
   });
   handle('bar:conversation', async (e) => {
     const s = sessionFor(e.sender);
-    if (!s || s.kind === 'chrome') return '';
-    return String((await s.run(inject.CONVERSATION).catch(() => '')) || '');
+    if (!s || s.kind === 'chrome') return { text: '', files: [] };
+    const read = async (script) => String((await s.run(script).catch(() => '')) || '');
+    return { text: await read(inject.CONVERSATION), files: core.fileNames(await read(inject.MAIN_TEXT)) };
   });
   handle('bar:dismiss-pending', (e, id) => {
     const s = sessionFor(e.sender);
@@ -860,6 +886,7 @@ if (!app.requestSingleInstanceLock()) {
     buildAppMenu();
     schedulePauses();
     store.onChange(() => schedulePauses());
+    setInterval(autoSave, Number(process.env.RELEVO_AUTOSAVE_MS) || 20000);
     createMain();
   });
   app.on('window-all-closed', () => app.quit());

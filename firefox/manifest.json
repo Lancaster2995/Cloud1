@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Relevo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Varias cuentas de Claude a la vez, cada una en su contenedor, y traspaso de proyectos entre ellas.",
   "author": "lancaster2995",
   "homepage_url": "https://github.com/Lancaster2995/Cloud1",
@@ -10,7 +10,7 @@
     "contextualIdentities", "cookies", "tabs", "storage", "alarms", "notifications",
     "clipboardRead", "clipboardWrite", "https://claude.ai/*"
   ],
-  "background": { "scripts": ["shared/core.js", "background.js"] },
+  "background": { "scripts": ["shared/core.js", "shared/model.js", "shared/inject.js", "background.js"] },
   "sidebar_action": {
     "default_title": "Relevo",
     "default_panel": "sidebar.html",

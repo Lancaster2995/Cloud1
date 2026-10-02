@@ -85,5 +85,13 @@
     return h('label', null, h('span.label', label), input);
   }
 
-  window.UI = { h, toast, modal, field, hooks };
+  /** "Estado automático" option of a project: {label, input}. */
+  function autoStateBox(checked) {
+    const input = h('input', { type: 'checkbox', checked: !!checked });
+    const label = h('label.check', { title: 'Claude termina cada respuesta con el bloque de estado y Relevo lo guarda solo: si se acaban los mensajes, el progreso ya está guardado. Gasta un poco más de uso por respuesta.' },
+      input, 'Estado automático: Claude deja el estado en cada respuesta y Relevo lo guarda solo');
+    return { label, input };
+  }
+
+  window.UI = { h, toast, modal, field, hooks, autoStateBox };
 })();

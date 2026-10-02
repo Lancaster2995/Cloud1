@@ -1,7 +1,7 @@
 /* Toolbar on top of each account pane: project selector and handoff actions. */
 (function () {
   'use strict';
-  const { h, toast, modal, field, hooks } = window.UI;
+  const { h, toast, modal, field, hooks, autoStateBox } = window.UI;
   const C = window.RelevoCore;
   const api = (channel, ...args) => window.relevo.call(channel, ...args);
   const $ = (id) => document.getElementById(id);
@@ -154,9 +154,9 @@
   /** When Claude can no longer give the state (out of messages), the conversation itself is kept. */
   async function saveConversation() {
     const p = activeProject();
-    const text = await api('bar:conversation');
+    const { text, files } = await api('bar:conversation');
     if (!text) return say('No pude leer la conversación de esta página.');
-    const changed = await api('project:state', p.id, C.conversationBlock(p, text), 'conversation');
+    const changed = await api('project:state', p.id, C.conversationBlock(p, text, files), 'conversation');
     say(changed ? 'Conversación guardada: viaja en el próximo traspaso.' : 'Esa conversación ya estaba guardada.');
   }
 
@@ -169,11 +169,13 @@
     // Keep the newest state shown in this conversation before handing over.
     const r = await api('bar:save-state', true).catch(() => ({}));
     if (r.status === 'saved') say('Estado de la conversación guardado' + (r.progress >= 0 ? ' · ' + r.progress + '%' : ''));
-    const conversation = await api('bar:conversation').catch(() => '');
-    transferDialog(p.id, r.status === 'template' || r.template, conversation, r.status !== 'saved' && r.status !== 'same');
+    const page = await api('bar:conversation').catch(() => ({ text: '', files: [] }));
+    transferDialog(p.id, r.status === 'template' || r.template, page, r.status !== 'saved' && r.status !== 'same');
   }
 
-  function transferDialog(id, unanswered, conversation, noBlock) {
+  function transferDialog(id, unanswered, page, noBlock) {
+    const conversation = page && page.text;
+    const files = (page && page.files) || [];
     const p = project(id);
     const now = Date.now();
     const targets = data.accounts.filter((a) => a.slot !== slot).sort((a, b) => a.slot - b.slot);
@@ -193,13 +195,14 @@
       unanswered ? h('p.warn', 'Ojo: Claude aún no respondió al último «Pedir estado»; se pasará el estado guardado anterior.') : null,
       field('PASAR A', target),
       field('PAUSAR «' + account().name + '» (límite alcanzado)', pause),
+      files.length ? h('p.warn', 'Archivos en esta conversación: ' + files.join(', ') + '. No viajan con el traspaso: descarga los que generó Claude y vuelve a adjuntar los que necesites en la otra cuenta.') : null,
       conversation ? h('label.check', withConversation, noBlock
         ? 'Pasar la conversación de esta pestaña (Claude no dejó un bloque de estado)'
         : 'Pasar la conversación de esta pestaña en lugar del último estado') : null,
       h('label.check', side, 'Ver las dos cuentas lado a lado')), [
       { label: 'Cancelar' },
       { label: 'Pasar', kind: 'primary', onclick: async () => {
-        if (conversation && withConversation.checked) await api('project:state', id, C.conversationBlock(p, conversation), 'conversation');
+        if (conversation && withConversation.checked) await api('project:state', id, C.conversationBlock(p, conversation, files), 'conversation');
         await api('project:transfer', id, slot, Number(target.value), Number(pause.value), side.checked);
       } }
     ]);
@@ -220,11 +223,12 @@
     const goal = h('textarea', { rows: 3, placeholder: 'Qué debe quedar terminado' });
     const repo = h('input', { type: 'url', placeholder: 'https://github.com/usuario/repo (opcional)' });
     const branch = h('input', { type: 'text', placeholder: 'main (opcional)' });
-    modal('Nuevo proyecto', h('div', field('NOMBRE DEL PROYECTO', name), field('OBJETIVO', goal), field('REPOSITORIO', repo), field('RAMA', branch)), [
+    const auto = autoStateBox(true);
+    modal('Nuevo proyecto', h('div', field('NOMBRE DEL PROYECTO', name), field('OBJETIVO', goal), field('REPOSITORIO', repo), field('RAMA', branch), auto.label), [
       { label: 'Cancelar', onclick: () => render() },
       { label: 'Crear', kind: 'primary', onclick: async () => {
         if (!name.value.trim()) { name.focus(); toast('Escribe un nombre'); return false; }
-        await api('project:create', { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value }, slot);
+        await api('project:create', { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value, autoState: auto.input.checked }, slot);
         if (then) setTimeout(then, 80);
       } }
     ]);
@@ -349,6 +353,7 @@
   window.relevo.on('data', (d) => { data = d; render(); });
   window.relevo.on('nav', (n) => { $('back').disabled = !n.canGoBack; $('forward').disabled = !n.canGoForward; });
   window.relevo.on('loading', (on) => { $('loading').hidden = !on; });
+  window.relevo.on('autosaved', (pct) => say('Estado guardado solo' + (pct >= 0 ? ' · ' + pct + '%' : '')));
   $('openBrowser').addEventListener('click', run(() => api('bar:nav', 'open-browser')));
   $('hintBrowser').addEventListener('click', run(() => api('bar:nav', 'open-browser')));
   $('hintInside').addEventListener('click', run(async () => {

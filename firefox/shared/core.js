@@ -172,6 +172,9 @@
     return s;
   }
 
+  /** Projects ask Claude for the status block at the end of every answer unless turned off. */
+  const autoState = (p) => p.autoState !== false;
+
   function start(p) {
     let s = 'Vamos a desarrollar el proyecto «' + p.name + '».\n\n';
     if (!empty(p.goal)) s += 'Objetivo: ' + p.goal.trim() + '\n';
@@ -179,7 +182,9 @@
     if (!empty(p.notes)) s += '\nContexto e indicaciones:\n' + p.notes.trim() + '\n';
     s += '\nEste trabajo se hará en varias sesiones y puede continuar en otra conversación. Por eso:\n';
     s += '1. Avanza por etapas y termina cada respuesta indicando qué quedó hecho y qué sigue.\n';
-    s += '2. Cuando te escriba «CHECKPOINT», responde únicamente con el bloque de estado, dentro de un bloque de código, con este formato:\n\n';
+    s += autoState(p)
+      ? '2. Al final de cada respuesta añade el bloque de estado actualizado, dentro de un bloque de código y con este formato (breve: lo justo para que otra sesión pueda continuar sin esta conversación). Si te escribo «CHECKPOINT», responde únicamente con ese bloque:\n\n'
+      : '2. Cuando te escriba «CHECKPOINT», responde únicamente con el bloque de estado, dentro de un bloque de código, con este formato:\n\n';
     s += '```\n' + template(p.name) + '\n```\n';
     if (!empty(p.repo)) {
       s += '3. Haz commit y push de cada avance y mantén ese mismo bloque actualizado en HANDOFF.md, en la raíz del repositorio.\n';
@@ -200,7 +205,9 @@
     s += '- Retoma desde SIGUIENTES_PASOS sin rehacer lo que ya está HECHO.\n';
     s += '- Respeta las DECISIONES tomadas salvo que encuentres un problema; si es así, explícalo.\n';
     s += '- Si te falta información imprescindible, pregúntame antes de suponer.\n';
-    s += '- Cuando te escriba «CHECKPOINT», responde solo con el bloque de estado actualizado, con el mismo formato que el de arriba y dentro de un bloque de código.\n';
+    s += autoState(p)
+      ? '- Al final de cada respuesta añade el bloque de estado actualizado (mismo formato que el de arriba, breve y dentro de un bloque de código). Si te escribo «CHECKPOINT», responde solo con ese bloque.\n'
+      : '- Cuando te escriba «CHECKPOINT», responde solo con el bloque de estado actualizado, con el mismo formato que el de arriba y dentro de un bloque de código.\n';
     if (!empty(p.repo)) s += '- Haz commit y push de cada avance y mantén HANDOFF.md actualizado.\n';
     s += '\nPrimero confirma en 2-3 líneas lo que entiendes del estado y el siguiente paso; luego continúa.';
     return s;
@@ -217,6 +224,25 @@
 
   const next = (p) => (hasState(p) ? handoff(p) : start(p));
 
+  /** True when the block names project p in PROYECTO: only then is it saved without asking. */
+  function isAbout(block, p) {
+    const key = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');
+    const name = key((section(block, 'PROYECTO') || '').split('\n')[0]);
+    return name !== '' && name === key(p.name);
+  }
+
+  const FILE_NAME = /[^\s/\\()«»"'<>|:*?]+\.(?:pdf|docx?|xlsx?|pptx?|csv|txt|md|png|jpe?g|gif|webp|svg|zip|json|html?|py|js|ts)(?![\w])/gi;
+
+  /** File names seen on the page (attachments, files Claude made), without repeats, at most 15. */
+  function fileNames(text) {
+    const out = [];
+    for (const m of String(text || '').match(FILE_NAME) || []) {
+      const n = m.replace(/^[.…-]+/, '');
+      if (n && !out.some((x) => x.toLowerCase() === n.toLowerCase())) out.push(n);
+    }
+    return out.slice(0, 15);
+  }
+
   /** A prompt Relevo wrote (it may still be on the clipboard): its block is not a new state. */
   const isOwnPrompt = (text) => /^(Vamos a desarrollar el proyecto «|Continúo el proyecto «|CHECKPOINT\.)/.test(String(text || '').trim());
 
@@ -228,7 +254,7 @@
    * it reads as a key, a marker or the template; long conversations keep the beginning (the
    * instructions) and the end. No PROGRESO: the saved percentage stays as it was.
    */
-  function conversationBlock(p, text) {
+  function conversationBlock(p, text, files) {
     let t = String(text || '').replace(/\r\n?/g, '\n').trim();
     if (t.length > CONVERSATION_MAX) {
       t = t.slice(0, 12000) + '\n\n[… se omitió la parte del medio de la conversación …]\n\n' + t.slice(-(CONVERSATION_MAX - 12000));
@@ -242,7 +268,9 @@
       'SIGUIENTES_PASOS:',
       '- Leer la conversación anterior y retomar la última tarea donde quedó',
       'BLOQUEOS:',
-      '- Los archivos adjuntos de la conversación anterior no vienen en este texto: si hacen falta, pídelos.',
+      files && files.length
+        ? '- Archivos de la conversación anterior que no vienen en este texto: ' + files.join(', ') + '. Si hacen falta, pídelos.'
+        : '- Los archivos adjuntos de la conversación anterior no vienen en este texto: si hacen falta, pídelos.',
       'CONTEXTO_EXTRA:',
       'Conversación anterior:',
       t.split('\n').map((l) => '| ' + l).join('\n'),
@@ -307,6 +335,7 @@
       case 'edit': s += 'Estado editado a mano'; break;
       case 'restore': s += 'Estado restaurado'; break;
       case 'conversation': s += 'Conversación guardada desde ' + nameOr(e.accountName, e.slot); break;
+      case 'auto': s += 'Estado guardado solo desde ' + nameOr(e.accountName, e.slot); break;
       default: s += 'Checkpoint desde ' + nameOr(e.accountName, e.slot);
     }
     if (e.progress >= 0) s += ' · ' + e.progress + '%';
@@ -351,7 +380,7 @@
   return {
     START, END, PLACEHOLDER, KEYS, URL_CHAT, URL_CODE, COLORS, MAX_HISTORY,
     find, section, items, progress, normalize, isTemplate, knownKeys,
-    template, start, handoff, checkpoint, next, hasState, conversationBlock, isOwnPrompt,
+    template, start, handoff, checkpoint, next, hasState, conversationBlock, isOwnPrompt, isAbout, fileNames, autoState,
     stamp, clock, ago, duration, accountName, describe, summary, nextStep, markdown,
     isPaused, accountLabel
   };

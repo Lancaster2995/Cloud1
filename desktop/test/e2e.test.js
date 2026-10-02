@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
 const { _electron: electron } = require('playwright');
+const core = require('../src/shared/core');
 
 const ROOT = path.join(__dirname, '..');
 const SHOTS = path.join(ROOT, 'test-results', 'screens');
@@ -135,7 +136,7 @@ test('handoff between two accounts as tabs of the one Relevo window', async () =
     await bar1.click('[data-act=checkpoint]');
     await site1.waitForFunction(() => document.querySelector('.ProseMirror').innerText.startsWith('CHECKPOINT'));
     await site1.click('#send');
-    await site1.waitForSelector('pre');
+    await site1.waitForFunction(() => document.body.innerText.includes('PROGRESO: 60%'));
     await bar1.click('[data-act=save]');
     await bar1.waitForSelector('#status:has-text("Estado guardado")');
     let data = await dash.evaluate(() => window.relevo.call('data'));
@@ -215,7 +216,7 @@ test('passing an account that ran out of messages carries the conversation', asy
     const bar1 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1'));
     const site1 = await pageMatching(app, (u) => u.includes('chat.html?who=1'));
     await site1.waitForSelector('.ProseMirror');
-    await site1.evaluate(() => { document.querySelector('.ProseMirror').textContent = 'Mejora esta consulta técnica con los PDF'; });
+    await site1.evaluate(() => { document.querySelector('.ProseMirror').textContent = 'Mejora esta consulta técnica con los PDF (adjunto manual-EPK.pdf)'; });
     await site1.click('#send');
     await site1.waitForSelector('.font-claude-response');
     await bar1.waitForSelector('#account:has-text("Personal")');
@@ -223,6 +224,7 @@ test('passing an account that ran out of messages carries the conversation', asy
     // Out of messages: "Pasar" offers the conversation itself, already checked.
     await bar1.click('[data-act=transfer]');
     await bar1.waitForSelector('.dialog:has-text("Claude no dejó un bloque de estado")');
+    assert.ok(await bar1.isVisible('.dialog .warn:has-text("Archivos en esta conversación: manual-EPK.pdf")'));
     assert.equal(await bar1.isChecked('.dialog label.check:has-text("Pasar la conversación") input'), true);
     await bar1.selectOption('.dialog select >> nth=0', '2');
     await bar1.click('.dialog .btn.primary');
@@ -237,6 +239,32 @@ test('passing an account that ran out of messages carries the conversation', asy
     const p = (await dash.evaluate(() => window.relevo.call('data'))).projects.find((x) => x.id === 'p1');
     assert.equal(p.history[p.history.length - 2].type, 'conversation');
     assert.ok(p.state.includes('| Claude: Entendido.'));
+    assert.ok(core.section(p.state, 'BLOQUEOS').includes('manual-EPK.pdf'));
+  } finally {
+    await app.close();
+  }
+});
+
+test('with the automatic state every answer is saved by itself', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-e2e-auto-'));
+  seed(dir);
+  const { app, shell, dash } = await launch({ RELEVO_USER_DATA: dir, RELEVO_AUTOSAVE_MS: '1000' });
+  try {
+    await shell.click('.tab:has-text("Personal")');
+    const bar1 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1'));
+    const site1 = await pageMatching(app, (u) => u.includes('chat.html?who=1'));
+    await site1.waitForSelector('.ProseMirror');
+    await bar1.waitForSelector('#account:has-text("Personal")');
+    await bar1.click('[data-act=handoff]');
+    await site1.waitForFunction(() => document.querySelector('.ProseMirror').innerText.includes('Al final de cada respuesta'));
+    await site1.click('#send');
+
+    // Nobody pressed "Guardar": the block at the end of the answer is saved anyway.
+    await bar1.waitForSelector('#status:has-text("Estado guardado solo · 25%")');
+    const p = (await dash.evaluate(() => window.relevo.call('data'))).projects.find((x) => x.id === 'p1');
+    assert.equal(p.progress, 25);
+    assert.equal(p.history[p.history.length - 1].type, 'auto');
+    assert.ok(p.state.includes('SIGUIENTES_PASOS:\n- API REST'));
   } finally {
     await app.close();
   }

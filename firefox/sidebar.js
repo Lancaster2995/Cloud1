@@ -7,7 +7,7 @@
  */
 (function () {
   'use strict';
-  const { h, toast, modal, field } = window.UI;
+  const { h, toast, modal, field, autoStateBox } = window.UI;
   const C = window.RelevoCore;
   const M = window.RelevoModel;
   const J = window.RelevoInject;
@@ -184,10 +184,11 @@
     ]);
   }
 
-  /** The conversation of the active tab, or '' when it is not a Claude page. */
+  /** The conversation of the active tab and the file names on it ({text: ''} when it is not a Claude page). */
   async function readConversation() {
     await refreshTab();
-    return String((await run(J.CONVERSATION).catch(() => '')) || '');
+    const read = async (code) => String((await run(code).catch(() => '')) || '');
+    return { text: await read(J.CONVERSATION), files: C.fileNames(await read(J.MAIN_TEXT)) };
   }
 
   /** When Claude can no longer give the state (out of messages), the conversation itself is kept. */
@@ -195,9 +196,9 @@
     const a = current();
     const p = a && project(a.activeProjectId);
     if (!p) return;
-    const text = await readConversation();
+    const { text, files } = await readConversation();
     if (!text) return say('No pude leer la conversación de esta pestaña.');
-    const changed = await edit((d) => M.saveCheckpoint(d, p.id, a.slot, C.conversationBlock(p, text), 'conversation'));
+    const changed = await edit((d) => M.saveCheckpoint(d, p.id, a.slot, C.conversationBlock(p, text, files), 'conversation'));
     say(changed ? 'Conversación guardada: viaja en el próximo traspaso.' : 'Esa conversación ya estaba guardada.');
   }
 
@@ -209,11 +210,13 @@
     // Keep the newest state shown in this conversation before handing over.
     const r = await readState().catch(() => ({}));
     if (r.status === 'saved') say('Estado de la conversación guardado' + (r.progress >= 0 ? ' · ' + r.progress + '%' : ''));
-    const conversation = await readConversation();
-    transferDialog(a, p.id, r.status === 'template' || r.template, conversation, r.status !== 'saved' && r.status !== 'same');
+    const page = await readConversation();
+    transferDialog(a, p.id, r.status === 'template' || r.template, page, r.status !== 'saved' && r.status !== 'same');
   }
 
-  function transferDialog(from, id, unanswered, conversation, noBlock) {
+  function transferDialog(from, id, unanswered, page, noBlock) {
+    const conversation = page.text;
+    const files = page.files;
     const p = project(id);
     const now = Date.now();
     const targets = accounts().filter((a) => a.slot !== from.slot);
@@ -229,13 +232,14 @@
       unanswered ? h('p.warn', 'Ojo: Claude aún no respondió al último «Pedir estado»; se pasará el estado guardado anterior.') : null,
       field('PASAR A', target),
       field('PAUSAR «' + from.name + '» (límite alcanzado)', pause),
+      files.length ? h('p.warn', 'Archivos en esta conversación: ' + files.join(', ') + '. No viajan con el traspaso: descarga los que generó Claude y vuelve a adjuntar los que necesites en la otra cuenta.') : null,
       conversation ? h('label.check', withConversation, noBlock
         ? 'Pasar la conversación de esta pestaña (Claude no dejó un bloque de estado)'
         : 'Pasar la conversación de esta pestaña en lugar del último estado') : null), [
       { label: 'Cancelar' },
       { label: 'Pasar', kind: 'primary', onclick: async () => {
         if (conversation && withConversation.checked) {
-          await edit((d) => M.saveCheckpoint(d, id, from.slot, C.conversationBlock(p, conversation), 'conversation'));
+          await edit((d) => M.saveCheckpoint(d, id, from.slot, C.conversationBlock(p, conversation, files), 'conversation'));
         }
         await moveProject(id, from.slot, Number(target.value), Number(pause.value));
       } }
@@ -286,11 +290,12 @@
     const goal = h('textarea', { rows: 3, placeholder: 'Qué debe quedar terminado' });
     const repo = h('input', { type: 'url', placeholder: 'https://github.com/usuario/repo (opcional)' });
     const branch = h('input', { type: 'text', placeholder: 'main (opcional)' });
-    modal('Nuevo proyecto', h('div', field('NOMBRE DEL PROYECTO', name), field('OBJETIVO', goal), field('REPOSITORIO', repo), field('RAMA', branch)), [
+    const auto = autoStateBox(true);
+    modal('Nuevo proyecto', h('div', field('NOMBRE DEL PROYECTO', name), field('OBJETIVO', goal), field('REPOSITORIO', repo), field('RAMA', branch), auto.label), [
       { label: 'Cancelar', onclick: () => render() },
       { label: 'Crear', kind: 'primary', onclick: async () => {
         if (!name.value.trim()) { name.focus(); toast('Escribe un nombre'); return false; }
-        await edit((d) => M.createProject(d, { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value }, a ? a.slot : 0));
+        await edit((d) => M.createProject(d, { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value, autoState: auto.input.checked }, a ? a.slot : 0));
         if (then) setTimeout(then, 80);
       } }
     ]);
@@ -310,15 +315,16 @@
 
   function stateDialog(p) {
     const input = h('textarea.mono', { rows: 14, value: p.state, placeholder: '<<<ESTADO …' });
-    modal('Estado de «' + p.name + '»', input, [
+    const auto = autoStateBox(p.autoState);
+    modal('Estado de «' + p.name + '»', h('div', input, auto.label), [
       { label: 'Copiar JSON', onclick: async () => { await navigator.clipboard.writeText(JSON.stringify(project(p.id), null, 2)); toast('JSON copiado: impórtalo en otro dispositivo'); return false; } },
       { label: 'Cancelar' },
       { label: 'Guardar', kind: 'primary', onclick: async () => {
+        await edit((d) => M.updateProject(d, p.id, { autoState: auto.input.checked }));
         const r = C.find(input.value, false);
         const block = r.block || input.value.trim();
-        if (!block) { toast('El estado está vacío'); return false; }
-        const changed = await edit((d) => M.saveCheckpoint(d, p.id, 0, block, 'edit'));
-        say(changed ? 'Estado guardado' : 'Sin cambios');
+        const changed = block ? await edit((d) => M.saveCheckpoint(d, p.id, 0, block, 'edit')) : false;
+        say(changed ? 'Estado guardado' : 'Guardado');
       } }
     ]);
   }
@@ -485,7 +491,17 @@
 
   $('ver').textContent = 'versión ' + browser.runtime.getManifest().version;
   browser.storage.onChanged.addListener((changes) => {
-    if (changes[KEY]) { data = M.defaults(changes[KEY].newValue); render(); }
+    if (!changes[KEY]) return;
+    const before = M.defaults(changes[KEY].oldValue);
+    data = M.defaults(changes[KEY].newValue);
+    // The background saved a state by itself: say so, like the Windows toolbar.
+    const auto = data.projects.find((p) => {
+      const last = p.history[p.history.length - 1];
+      const old = M.project(before, p.id);
+      return last && last.type === 'auto' && (!old || old.stateTime !== p.stateTime);
+    });
+    if (auto) say('Estado de «' + auto.name + '» guardado solo' + (auto.progress >= 0 ? ' · ' + auto.progress + '%' : ''));
+    render();
   });
   browser.tabs.onActivated.addListener((info) => { if (info.windowId === windowId) refreshTab(); });
   setInterval(render, 30000);

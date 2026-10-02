@@ -161,6 +161,34 @@ test('layout: dashboard, one, two side by side or all open accounts', () => {
   assert.deepEqual([c.x, c.y, c.width, c.height], [0, 341, 1000, 299]); // last row uses the full width
 });
 
+test('automatic state: asked in every answer, saved only for its own project', () => {
+  const p = project();
+  assert.ok(core.start(p).includes('Al final de cada respuesta añade el bloque de estado'));
+  assert.equal(core.start(Object.assign({}, p, { autoState: false })).includes('Al final de cada respuesta'), false);
+  p.state = core.find(ANSWER, true).block;
+  assert.ok(core.handoff(p).includes('Al final de cada respuesta añade el bloque de estado'));
+  assert.ok(core.isTemplate(core.start(p)), 'the start prompt still carries the template');
+
+  assert.equal(core.isAbout(ANSWER, { name: 'Tienda' }), true);
+  assert.equal(core.isAbout(ANSWER.replace('PROYECTO: Tienda', 'PROYECTO: **tienda**'), { name: 'Tienda' }), true);
+  assert.equal(core.isAbout(ANSWER, { name: 'Otra cosa' }), false);
+  assert.equal(core.isAbout(ANSWER.replace('PROYECTO: Tienda', ''), { name: 'Tienda' }), false);
+
+  // On by default, also for projects saved before the option existed; can be turned off.
+  const d = model.defaults({ projects: [{ id: 'old', name: 'Vieja' }] });
+  assert.equal(d.projects[0].autoState, true);
+  assert.equal(model.createProject(d, { name: 'Sin', autoState: false }, 0).autoState, false);
+  model.updateProject(d, 'old', { autoState: false });
+  assert.equal(d.projects[0].autoState, false);
+});
+
+test('file names on the page are listed for the handoff reminder', () => {
+  const page = 'Consulta_Tec…\nEPK_ITC.docx\nDOCX\n(Req-62) 8. M… PK-i7010.pdf PDF https://claude.ai/new informe.final.PDF y otra vez EPK_ITC.docx';
+  assert.deepEqual(core.fileNames(page), ['EPK_ITC.docx', 'PK-i7010.pdf', 'informe.final.PDF']);
+  const block = core.conversationBlock({ name: 'Consulta Luz' }, 'Yo: hola', ['EPK_ITC.docx']);
+  assert.ok(core.section(block, 'BLOQUEOS').includes('EPK_ITC.docx'));
+});
+
 test('the Firefox extension carries the same shared files (node firefox/sync.js)', () => {
   assert.deepEqual(require('../../firefox/sync').stale(), []);
 });

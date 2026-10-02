@@ -11,7 +11,7 @@ const CALLS = new Set([
   'project:transfer', 'project:import', 'project:export', 'project:import-file',
   'bar:height', 'bar:overlay', 'bar:nav', 'bar:insert', 'bar:save-state', 'bar:dismiss-pending', 'bar:menu', 'bar:conversation'
 ]);
-const EVENTS = new Set(['data', 'nav', 'loading', 'command', 'tabs']);
+const EVENTS = new Set(['data', 'nav', 'loading', 'command', 'tabs', 'autosaved']);
 
 contextBridge.exposeInMainWorld('relevo', {
   call: async (channel, ...args) => {

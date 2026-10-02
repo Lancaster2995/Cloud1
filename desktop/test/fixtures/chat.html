@@ -29,6 +29,7 @@
   // Minimal stand-in for a chat page: a rich-text box that handles paste like ProseMirror.
   const box = document.querySelector('.ProseMirror');
   const log = document.getElementById('log');
+  let auto = null; // project name, once a prompt asks for the status block at the end of every answer
   box.addEventListener('paste', (e) => {
     const text = e.clipboardData && e.clipboardData.getData('text/plain');
     if (!text) return;
@@ -51,6 +52,7 @@
     b.textContent = text;
     add('user', b);
     box.textContent = '';
+    if (text.includes('Al final de cada respuesta')) auto = (/«([^»]+)»/.exec(text) || [])[1] || 'Proyecto';
     setTimeout(() => {
       const answer = document.createElement('div');
       answer.className = 'font-claude-response';
@@ -64,6 +66,12 @@
         answer.appendChild(pre);
       } else {
         answer.textContent = 'Entendido. Plan: 1) modelo de datos, 2) API, 3) pantalla de escaneo, 4) reportes. Empiezo por el modelo de datos…';
+        if (auto) {
+          const pre = document.createElement('pre');
+          pre.textContent = ['<<<ESTADO', 'PROYECTO: ' + auto, 'PROGRESO: 25%', 'RESUMEN: Modelo de datos listo.',
+            'SIGUIENTES_PASOS:', '- API REST', 'ESTADO>>>'].join('\n');
+          answer.appendChild(pre);
+        }
       }
       add('assistant', answer);
     }, 150);

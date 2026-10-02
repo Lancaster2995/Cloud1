@@ -35,15 +35,19 @@
    * The conversation on a claude.ai page as "Yo:" / "Claude:" turns. If the page does not mark
    * its messages as expected, the text of the page without its side panels.
    */
-  const CONVERSATION = `(function(){try{
-    var U='[data-testid="user-message"]', all=[].slice.call(document.querySelectorAll(U+',.font-claude-response,.font-claude-message'));
-    all=all.filter(function(e){return !all.some(function(o){return o!==e&&o.contains(e);});});
-    if(all.length>1&&all.some(function(e){return e.matches(U);}))
-      return all.map(function(e){return (e.matches(U)?'Yo: ':'Claude: ')+(e.innerText||'').trim();}).join('\\n\\n');
+  /** Text of the page without its side panels (the list of chats). */
+  const MAIN_TEXT = `(function(){try{
     var root=document.querySelector('main')||document.body, t=root.innerText||'';
     [].forEach.call(root.querySelectorAll('nav,aside'),function(n){if(n.innerText)t=t.split(n.innerText).join('');});
     return t.trim();
   }catch(e){return '';}})()`;
 
-  return { insert, PAGE_TEXT, CONVERSATION };
+  const CONVERSATION = `(function(){try{
+    var U='[data-testid="user-message"]', all=[].slice.call(document.querySelectorAll(U+',.font-claude-response,.font-claude-message'));
+    all=all.filter(function(e){return !all.some(function(o){return o!==e&&o.contains(e);});});
+    if(all.length>1&&all.some(function(e){return e.matches(U);}))
+      return all.map(function(e){return (e.matches(U)?'Yo: ':'Claude: ')+(e.innerText||'').trim();}).join('\\n\\n');
+  }catch(e){}return ${MAIN_TEXT};})()`;
+
+  return { insert, PAGE_TEXT, MAIN_TEXT, CONVERSATION };
 });

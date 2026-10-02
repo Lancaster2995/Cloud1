@@ -37,6 +37,7 @@
     for (const k of ['name', 'goal', 'repo', 'branch', 'notes', 'state']) p[k] = p[k] || '';
     for (const k of ['progress', 'currentSlot', 'pendingSlot', 'stateTime', 'created', 'updated']) p[k] = Number(p[k]) || 0;
     p.history = Array.isArray(p.history) ? p.history : [];
+    p.autoState = p.autoState !== false;
     return p;
   }
 
@@ -86,7 +87,8 @@
     const p = normalizeProject({
       id: globalThis.crypto.randomUUID(), name: String(fields.name || '').trim(), goal: String(fields.goal || '').trim(),
       repo: String(fields.repo || '').trim(), branch: String(fields.branch || '').trim(),
-      notes: String(fields.notes || '').trim(), created: now, updated: now, currentSlot: slot || 0
+      notes: String(fields.notes || '').trim(), created: now, updated: now, currentSlot: slot || 0,
+        autoState: fields.autoState !== false
     });
     if (!p.name) throw new Error('Escribe un nombre');
     addEvent(p, { time: now, type: 'create', slot: slot || 0, accountName: slot ? core.accountName(d, slot) : '', progress: 0 });
@@ -100,6 +102,7 @@
     const p = project(d, id);
     if (!p) return null;
     for (const k of ['name', 'goal', 'repo', 'branch', 'notes']) if (fields[k] !== undefined) p[k] = String(fields[k]).trim();
+    if (fields.autoState !== undefined) p.autoState = !!fields.autoState;
     if (!p.name) throw new Error('Escribe un nombre');
     p.updated = Date.now();
     return p;

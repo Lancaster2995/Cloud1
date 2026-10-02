@@ -11,7 +11,7 @@ Trabaja con **varias sesiones de Claude a la vez, cada una con una cuenta distin
 
 | Plataforma | Archivo | Instalación |
 |---|---|---|
-| **Windows 10/11** (64 bits) | [`Relevo-Setup-1.2.1.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.1/Relevo-Setup-1.2.1.exe) (instalador) o [`Relevo-1.2.1-portable.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.1/Relevo-1.2.1-portable.exe) | [Ver abajo](#windows) |
+| **Windows 10/11** (64 bits) | [`Relevo-Setup-1.2.2.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-Setup-1.2.2.exe) (instalador) o [`Relevo-1.2.2-portable.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-1.2.2-portable.exe) | [Ver abajo](#windows) |
 | **iPhone / iPad** (iOS 17 o superior) | [`dist/Relevo.ipa`](dist/Relevo.ipa) o la [release de iOS](https://github.com/Lancaster2995/Cloud1/releases/tag/ios-v1.1.0) | [Ver abajo](#iphone-y-ipad-sin-mac) |
 | **Android 10+** | [`dist/Relevo.apk`](dist/Relevo.apk) o la [release de Android](https://github.com/Lancaster2995/Cloud1/releases/tag/v1.1.0) | Abrir el APK y permitir «Instalar apps desconocidas» |
 
@@ -26,7 +26,7 @@ Los proyectos usan el mismo formato en las tres versiones: exporta el JSON en un
   <img src="docs/screens/desktop-3-ventana-cuenta.png" width="49%" alt="Una cuenta en su pestaña con la barra de traspaso">
 </p>
 
-1. Descarga [`Relevo-Setup-1.2.1.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.1/Relevo-Setup-1.2.1.exe) y ejecútalo (o usa la [versión portable](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.1/Relevo-1.2.1-portable.exe), que no se instala). Si ya tenías una versión anterior, se instala encima y conserva tus proyectos.
+1. Descarga [`Relevo-Setup-1.2.2.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-Setup-1.2.2.exe) y ejecútalo (o usa la [versión portable](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-1.2.2-portable.exe), que no se instala). Si ya tenías una versión anterior, se instala encima y conserva tus proyectos.
 2. Como el ejecutable no está firmado, Windows puede mostrar «Windows protegió su PC»: pulsa **Más información → Ejecutar de todas formas**.
 3. En **Cuentas → + Agregar cuenta** (o el **+** de la barra de pestañas) crea una por cada cuenta de Claude. Cada una aparece como pestaña arriba.
 4. Abre su pestaña e inicia sesión una vez con tu correo (también si tu cuenta es de Google: ver [Iniciar sesión con Google](#iniciar-sesión-con-google)).
@@ -98,7 +98,10 @@ Google **no permite** «Continuar con Google» dentro de ventanas integradas (We
 
 4. **Pasar el proyecto**: **Pedir estado** → envías → **Guardar** → **Pasar**. En la cuenta destino aparece **Traspaso pendiente → Insertar prompt**; envías y Claude continúa desde *SIGUIENTES_PASOS*. Repite hasta terminar. El historial (Detalles) muestra cada checkpoint y traspaso y permite restaurar un estado anterior.
 
-   Si la cuenta se quedó sin mensajes antes de dar el bloque de estado, **Pasar** ofrece pasar **la conversación misma** (ya viene marcado): la otra cuenta recibe lo que se habló hasta ese punto y continúa. Los archivos adjuntos no viajan como texto: vuelve a adjuntarlos en la otra cuenta.
+   **Para no perder progreso cuando se acaban los mensajes:**
+   - **Estado automático** (activado por defecto en cada proyecto): el prompt pide a Claude que termine cada respuesta con el bloque de estado y Relevo lo guarda solo, sin pulsar Guardar. Gasta un poco más de uso por respuesta; se desactiva en los datos del proyecto.
+   - Si aun así la cuenta se quedó sin mensajes antes de dar el bloque, **Pasar** ofrece pasar **la conversación misma** (ya viene marcado): la otra cuenta recibe lo que se habló hasta ese punto y continúa.
+   - **Archivos:** al pasar, Relevo lista los archivos que ve en la conversación. No viajan como texto: descarga los que generó Claude y vuelve a adjuntar los que hagan falta en la otra cuenta.
 
 Si el proyecto tiene repositorio, los prompts piden a Claude hacer commit y push de cada avance y mantener el mismo bloque en `HANDOFF.md`, así el estado viaja también con el código (ideal con Claude Code en `claude.ai/code`).
 

@@ -1,7 +1,7 @@
 /* Relevo dashboard: projects, accounts and guide. */
 (function () {
   'use strict';
-  const { h, toast, modal, field } = window.UI;
+  const { h, toast, modal, field, autoStateBox } = window.UI;
   const C = window.RelevoCore;
   const api = (channel, ...args) => window.relevo.call(channel, ...args);
 
@@ -155,11 +155,12 @@
     const goal = h('textarea', { placeholder: 'Qué debe quedar terminado', rows: 3 });
     const repo = h('input', { type: 'url', placeholder: 'https://github.com/usuario/repo (opcional)' });
     const branch = h('input', { type: 'text', placeholder: 'main (opcional)' });
-    modal('Nuevo proyecto', h('div', field('NOMBRE DEL PROYECTO', name), field('OBJETIVO', goal), field('REPOSITORIO', repo), field('RAMA', branch)), [
+    const auto = autoStateBox(true);
+    modal('Nuevo proyecto', h('div', field('NOMBRE DEL PROYECTO', name), field('OBJETIVO', goal), field('REPOSITORIO', repo), field('RAMA', branch), auto.label), [
       { label: 'Cancelar' },
       { label: 'Crear', kind: 'primary', onclick: async () => {
         if (!name.value.trim()) { name.focus(); toast('Escribe un nombre'); return false; }
-        const id = await api('project:create', { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value }, slot);
+        const id = await api('project:create', { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value, autoState: auto.input.checked }, slot);
         toast('Proyecto creado');
         return id;
       } }
@@ -233,12 +234,13 @@
     const repo = h('input', { type: 'url', value: p.repo, placeholder: 'https://github.com/usuario/repo' });
     const branch = h('input', { type: 'text', value: p.branch, placeholder: 'main' });
     const notes = h('textarea', { rows: 4, value: p.notes, placeholder: 'Stack, estilo, restricciones… se incluyen en cada prompt' });
+    const auto = autoStateBox(p.autoState);
     right.appendChild(h('div.card',
       h('h3', 'Datos del proyecto'),
       field('NOMBRE', name), field('OBJETIVO', goal), field('REPOSITORIO', repo), field('RAMA', branch),
-      field('INDICACIONES PARA CADA SESIÓN', notes),
+      field('INDICACIONES PARA CADA SESIÓN', notes), auto.label,
       h('div.buttons', h('button.btn.primary', { onclick: async () => {
-        await api('project:update', p.id, { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value, notes: notes.value });
+        await api('project:update', p.id, { name: name.value, goal: goal.value, repo: repo.value, branch: branch.value, notes: notes.value, autoState: auto.input.checked });
         toast('Datos guardados');
       } }, 'Guardar datos'))));
 
