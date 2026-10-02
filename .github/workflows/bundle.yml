@@ -1,0 +1,55 @@
+name: Paquete completo (zip)
+
+# Publishes one zip with every build (Windows installer and portable, iPhone IPA, Android APK),
+# the source code and a LEEME, as the release "relevo-vX.Y.Z".
+on:
+  push:
+    paths:
+      - '.github/workflows/bundle.yml'
+      - 'tools/LEEME-paquete.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  VERSION: 1.1.0
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Armar el zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          B="Relevo-${VERSION}"
+          mkdir -p "$B/Windows" "$B/iPhone" "$B/Android"
+          gh release download "windows-v${VERSION}" --pattern "*.exe" --dir "$B/Windows"
+          gh release download "ios-v${VERSION}" --pattern "Relevo.ipa" --dir "$B/iPhone"
+          gh release download "v${VERSION}" --pattern "Relevo.apk" --dir "$B/Android"
+          git archive --format=tar --prefix="$B/codigo-fuente/" HEAD | tar -x
+          sed 's/$/\r/' tools/LEEME-paquete.txt > "$B/LEEME.txt"
+          zip -qr "Relevo-${VERSION}-todo.zip" "$B"
+          ls -la "Relevo-${VERSION}-todo.zip"
+          unzip -l "Relevo-${VERSION}-todo.zip" | grep -E "LEEME|\.exe|\.ipa|\.apk"
+
+      - name: Publicar
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: relevo-v${{ env.VERSION }}
+          name: Relevo ${{ env.VERSION }} — todo en un zip
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: Relevo-${{ env.VERSION }}-todo.zip
+          body: |
+            Todo Relevo ${{ env.VERSION }} en un solo archivo: descárgalo, descomprímelo y abre `LEEME.txt`.
+
+            - `Windows/Relevo-Setup-${{ env.VERSION }}.exe` — instalador para Windows 10/11 (recomendado)
+            - `Windows/Relevo-${{ env.VERSION }}-portable.exe` — sin instalar
+            - `iPhone/Relevo.ipa` — iPhone/iPad (iOS 17+), se instala con Sideloadly
+            - `Android/Relevo.apk` — Android 10+
+            - `codigo-fuente/` — código completo

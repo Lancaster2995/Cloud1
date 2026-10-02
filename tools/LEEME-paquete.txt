@@ -1,0 +1,47 @@
+RELEVO 1.1.0
+============
+
+Varias sesiones de Claude en paralelo, una por cuenta, y traspaso de un proyecto
+de una cuenta a otra con su estado hasta terminarlo.
+
+CONTENIDO
+---------
+Windows\Relevo-Setup-1.1.0.exe     Instalador para Windows 10/11 (recomendado)
+Windows\Relevo-1.1.0-portable.exe  Misma app sin instalar
+iPhone\Relevo.ipa                  iPhone/iPad con iOS 17+ (se instala con Sideloadly)
+Android\Relevo.apk                 Android 10+
+codigo-fuente\                     Codigo completo del proyecto (README.md con todos los detalles)
+
+INSTALAR EN WINDOWS
+-------------------
+1. Ejecuta Windows\Relevo-Setup-1.1.0.exe.
+2. Si aparece "Windows protegio su PC": pulsa "Mas informacion" y luego
+   "Ejecutar de todas formas" (el instalador no esta firmado).
+3. En Relevo: Cuentas -> + Agregar cuenta. En "Abrir con" elige:
+   - "Navegador (Chrome o Edge) con un perfil propio" para cuentas que entran
+     con Google. Se abre tu Chrome real con un perfil separado solo para esa
+     cuenta y ahi "Continuar con Google" funciona.
+   - "Ventana integrada de Relevo" para entrar con tu correo.
+4. Pulsa Abrir e inicia sesion una vez en cada cuenta.
+
+USO BASICO
+----------
+- Traspaso: inserta (o copia) el prompt de inicio o de continuacion.
+- Pedir estado: pide a Claude el bloque <<<ESTADO ... ESTADO>>>.
+- Guardar: guarda ese bloque como checkpoint con su % de progreso.
+  (En modo navegador: copia la respuesta de Claude con su boton Copiar y pulsa Guardar.)
+- Pasar: elige otra cuenta; alli aparece "Insertar prompt" para continuar.
+
+INSTALAR EN IPHONE (desde Windows, sin Mac)
+-------------------------------------------
+1. Instala iTunes e iCloud descargados de apple.com (no los de Microsoft Store)
+   y luego Sideloadly (sideloadly.io).
+2. Conecta el iPhone por cable y acepta "Confiar en este ordenador".
+3. En Sideloadly arrastra iPhone\Relevo.ipa, escribe tu Apple ID y pulsa Start.
+4. En el iPhone: Ajustes -> General -> VPN y gestion de dispositivos -> confia en
+   tu Apple ID. Activa Ajustes -> Privacidad y seguridad -> Modo de desarrollador.
+Con un Apple ID gratuito la app caduca a los 7 dias: vuelve a instalarla igual.
+En el iPhone, entra a Claude con tu correo (Google no permite iniciar sesion
+dentro de apps).
+
+Repositorio: https://github.com/Lancaster2995/Cloud1
