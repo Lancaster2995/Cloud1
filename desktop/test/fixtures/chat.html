@@ -47,11 +47,13 @@
     if (!text) return;
     const b = document.createElement('div');
     b.className = 'bubble';
+    b.dataset.testid = 'user-message'; // how claude.ai marks the user's messages
     b.textContent = text;
     add('user', b);
     box.textContent = '';
     setTimeout(() => {
       const answer = document.createElement('div');
+      answer.className = 'font-claude-response';
       if (text.startsWith('CHECKPOINT')) {
         const pre = document.createElement('pre');
         pre.textContent = ['<<<ESTADO', 'PROYECTO: App de inventario', 'PROGRESO: 60%',

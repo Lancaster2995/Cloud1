@@ -146,8 +146,18 @@
       'Pulsa «Pedir estado», envía el mensaje y, cuando Claude responda con el bloque <<<ESTADO … ESTADO>>>, vuelve a pulsar «Guardar». También puedes pegarlo a mano.'), [
       { label: 'Cerrar' },
       { label: 'Pegar a mano', onclick: () => { setTimeout(manualState, 50); } },
+      { label: 'Guardar la conversación', onclick: () => { run(saveConversation)(); } },
       { label: 'Pedir estado', kind: 'primary', onclick: () => { insert('checkpoint'); } }
     ]);
+  }
+
+  /** When Claude can no longer give the state (out of messages), the conversation itself is kept. */
+  async function saveConversation() {
+    const p = activeProject();
+    const text = await api('bar:conversation');
+    if (!text) return say('No pude leer la conversación de esta página.');
+    const changed = await api('project:state', p.id, C.conversationBlock(p, text), 'conversation');
+    say(changed ? 'Conversación guardada: viaja en el próximo traspaso.' : 'Esa conversación ya estaba guardada.');
   }
 
   async function startTransfer() {
@@ -159,10 +169,11 @@
     // Keep the newest state shown in this conversation before handing over.
     const r = await api('bar:save-state', true).catch(() => ({}));
     if (r.status === 'saved') say('Estado de la conversación guardado' + (r.progress >= 0 ? ' · ' + r.progress + '%' : ''));
-    transferDialog(p.id, r.status === 'template' || r.template);
+    const conversation = await api('bar:conversation').catch(() => '');
+    transferDialog(p.id, r.status === 'template' || r.template, conversation, r.status !== 'saved' && r.status !== 'same');
   }
 
-  function transferDialog(id, unanswered) {
+  function transferDialog(id, unanswered, conversation, noBlock) {
     const p = project(id);
     const now = Date.now();
     const targets = data.accounts.filter((a) => a.slot !== slot).sort((a, b) => a.slot - b.slot);
@@ -175,15 +186,22 @@
     if (free) target.value = String(free.slot);
     const pause = h('select', PAUSES.map(([label, ms]) => h('option', { value: ms }, label)));
     const side = h('input', { type: 'checkbox' });
+    const withConversation = h('input', { type: 'checkbox', checked: !!noBlock });
     modal('Pasar proyecto a otra cuenta', h('div',
       h('p.muted', '«' + p.name + '» · ' + p.progress + '%' + (C.hasState(p) ? ' · estado guardado ' + C.ago(p.stateTime)
         : ' · aún no hay estado guardado: se enviará el prompt de inicio.')),
       unanswered ? h('p.warn', 'Ojo: Claude aún no respondió al último «Pedir estado»; se pasará el estado guardado anterior.') : null,
       field('PASAR A', target),
       field('PAUSAR «' + account().name + '» (límite alcanzado)', pause),
+      conversation ? h('label.check', withConversation, noBlock
+        ? 'Pasar la conversación de esta pestaña (Claude no dejó un bloque de estado)'
+        : 'Pasar la conversación de esta pestaña en lugar del último estado') : null,
       h('label.check', side, 'Ver las dos cuentas lado a lado')), [
       { label: 'Cancelar' },
-      { label: 'Pasar', kind: 'primary', onclick: () => api('project:transfer', id, slot, Number(target.value), Number(pause.value), side.checked) }
+      { label: 'Pasar', kind: 'primary', onclick: async () => {
+        if (conversation && withConversation.checked) await api('project:state', id, C.conversationBlock(p, conversation), 'conversation');
+        await api('project:transfer', id, slot, Number(target.value), Number(pause.value), side.checked);
+      } }
     ]);
   }
 

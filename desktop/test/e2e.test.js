@@ -205,6 +205,43 @@ test('handoff between two accounts as tabs of the one Relevo window', async () =
 });
 
 
+test('passing an account that ran out of messages carries the conversation', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-e2e-limit-'));
+  seed(dir);
+  const { app, shell, dash } = await launch({ RELEVO_USER_DATA: dir });
+  try {
+    // Account 1 works on the project with its own message and never gives a status block.
+    await shell.click('.tab:has-text("Personal")');
+    const bar1 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1'));
+    const site1 = await pageMatching(app, (u) => u.includes('chat.html?who=1'));
+    await site1.waitForSelector('.ProseMirror');
+    await site1.evaluate(() => { document.querySelector('.ProseMirror').textContent = 'Mejora esta consulta técnica con los PDF'; });
+    await site1.click('#send');
+    await site1.waitForSelector('.font-claude-response');
+    await bar1.waitForSelector('#account:has-text("Personal")');
+
+    // Out of messages: "Pasar" offers the conversation itself, already checked.
+    await bar1.click('[data-act=transfer]');
+    await bar1.waitForSelector('.dialog:has-text("Claude no dejó un bloque de estado")');
+    assert.equal(await bar1.isChecked('.dialog label.check:has-text("Pasar la conversación") input'), true);
+    await bar1.selectOption('.dialog select >> nth=0', '2');
+    await bar1.click('.dialog .btn.primary');
+
+    const bar2 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=2'));
+    const site2 = await pageMatching(app, (u) => u.includes('chat.html?who=2'));
+    await bar2.waitForSelector('#banner:not([hidden])');
+    await site2.waitForSelector('.ProseMirror');
+    await bar2.click('#insertPending');
+    await site2.waitForFunction(() => document.querySelector('.ProseMirror').innerText.includes('| Yo: Mejora esta consulta técnica con los PDF'));
+    assert.ok((await site2.evaluate(() => document.querySelector('.ProseMirror').innerText)).startsWith('Continúo el proyecto'));
+    const p = (await dash.evaluate(() => window.relevo.call('data'))).projects.find((x) => x.id === 'p1');
+    assert.equal(p.history[p.history.length - 2].type, 'conversation');
+    assert.ok(p.state.includes('| Claude: Entendido.'));
+  } finally {
+    await app.close();
+  }
+});
+
 test('account in the real browser (own profile) and Google sign-in notice', async (t) => {
   // Use the test machine's Chromium/Chrome as "the user's browser".
   const browser = ['/opt/pw-browsers/chromium', '/usr/bin/google-chrome', '/usr/bin/chromium'].find((p) => fs.existsSync(p));

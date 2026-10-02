@@ -734,13 +734,19 @@ function registerIpc() {
     let block = page.block, source = 'la conversación';
     if (!block || page.newestIsTemplate) {
       // clipboard.readText() returns a promise in recent Electron versions; await works either way.
-      const clip = core.find(String(await clipboard.readText()), false);
+      const text = String(await clipboard.readText());
+      const clip = core.isOwnPrompt(text) ? { block: null } : core.find(text, false);
       if (clip.block) { block = clip.block; source = 'el portapapeles'; }
       else if (page.newestIsTemplate) return { status: 'template' };
     }
     if (!block) return { status: s.kind === 'chrome' ? 'none-clipboard' : 'none' };
     const changed = store.edit((d) => model.saveCheckpoint(d, p.id, s.slot, block, 'checkpoint'));
     return { status: changed ? 'saved' : 'same', source, progress: core.progress(block), template: page.newestIsTemplate };
+  });
+  handle('bar:conversation', async (e) => {
+    const s = sessionFor(e.sender);
+    if (!s || s.kind === 'chrome') return '';
+    return String((await s.run(inject.CONVERSATION).catch(() => '')) || '');
   });
   handle('bar:dismiss-pending', (e, id) => {
     const s = sessionFor(e.sender);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Relevo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Varias cuentas de Claude a la vez, cada una en su contenedor, y traspaso de proyectos entre ellas.",
   "author": "lancaster2995",
   "homepage_url": "https://github.com/Lancaster2995/Cloud1",

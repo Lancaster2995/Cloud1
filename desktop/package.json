@@ -1,7 +1,7 @@
 {
   "name": "relevo",
   "productName": "Relevo",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Varias sesiones de Claude en paralelo, cada una con su cuenta, y traspaso de proyectos entre ellas",
   "main": "src/main.js",
   "author": "lancaster2995",

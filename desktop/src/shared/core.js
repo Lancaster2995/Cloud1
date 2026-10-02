@@ -217,6 +217,39 @@
 
   const next = (p) => (hasState(p) ? handoff(p) : start(p));
 
+  /** A prompt Relevo wrote (it may still be on the clipboard): its block is not a new state. */
+  const isOwnPrompt = (text) => /^(Vamos a desarrollar el proyecto «|Continúo el proyecto «|CHECKPOINT\.)/.test(String(text || '').trim());
+
+  const CONVERSATION_MAX = 60000;
+
+  /**
+   * State block made from the conversation itself, for when Claude can no longer answer
+   * «CHECKPOINT» (the account ran out of messages). Each line is quoted with "| " so nothing in
+   * it reads as a key, a marker or the template; long conversations keep the beginning (the
+   * instructions) and the end. No PROGRESO: the saved percentage stays as it was.
+   */
+  function conversationBlock(p, text) {
+    let t = String(text || '').replace(/\r\n?/g, '\n').trim();
+    if (t.length > CONVERSATION_MAX) {
+      t = t.slice(0, 12000) + '\n\n[… se omitió la parte del medio de la conversación …]\n\n' + t.slice(-(CONVERSATION_MAX - 12000));
+    }
+    t = t.split(START).join('<<ESTADO').split(END).join('ESTADO>>')
+      .split(PLACEHOLDER).join('<0-100>').split('<tarea completada>').join('<tarea hecha>');
+    return [
+      START,
+      'PROYECTO: ' + p.name,
+      'RESUMEN: La sesión anterior se cortó (por ejemplo, por el límite de mensajes de la cuenta) antes de entregar un bloque de estado. En CONTEXTO_EXTRA va la conversación hasta ese punto.',
+      'SIGUIENTES_PASOS:',
+      '- Leer la conversación anterior y retomar la última tarea donde quedó',
+      'BLOQUEOS:',
+      '- Los archivos adjuntos de la conversación anterior no vienen en este texto: si hacen falta, pídelos.',
+      'CONTEXTO_EXTRA:',
+      'Conversación anterior:',
+      t.split('\n').map((l) => '| ' + l).join('\n'),
+      END
+    ].join('\n');
+  }
+
   // ------------------------------------------------------------------ formatting
 
   const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
@@ -273,6 +306,7 @@
         break;
       case 'edit': s += 'Estado editado a mano'; break;
       case 'restore': s += 'Estado restaurado'; break;
+      case 'conversation': s += 'Conversación guardada desde ' + nameOr(e.accountName, e.slot); break;
       default: s += 'Checkpoint desde ' + nameOr(e.accountName, e.slot);
     }
     if (e.progress >= 0) s += ' · ' + e.progress + '%';
@@ -317,7 +351,7 @@
   return {
     START, END, PLACEHOLDER, KEYS, URL_CHAT, URL_CODE, COLORS, MAX_HISTORY,
     find, section, items, progress, normalize, isTemplate, knownKeys,
-    template, start, handoff, checkpoint, next, hasState,
+    template, start, handoff, checkpoint, next, hasState, conversationBlock, isOwnPrompt,
     stamp, clock, ago, duration, accountName, describe, summary, nextStep, markdown,
     isPaused, accountLabel
   };

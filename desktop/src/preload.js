@@ -9,7 +9,7 @@ const CALLS = new Set([
   'account:open-project',
   'project:create', 'project:update', 'project:delete', 'project:state', 'project:restore', 'project:continue',
   'project:transfer', 'project:import', 'project:export', 'project:import-file',
-  'bar:height', 'bar:overlay', 'bar:nav', 'bar:insert', 'bar:save-state', 'bar:dismiss-pending', 'bar:menu'
+  'bar:height', 'bar:overlay', 'bar:nav', 'bar:insert', 'bar:save-state', 'bar:dismiss-pending', 'bar:menu', 'bar:conversation'
 ]);
 const EVENTS = new Set(['data', 'nav', 'loading', 'command', 'tabs']);
 

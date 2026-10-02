@@ -158,7 +158,8 @@
     }
     let block = page.block, source = 'la conversación';
     if (!block || page.newestIsTemplate) {
-      const clip = C.find(String(await navigator.clipboard.readText().catch(() => '')), false);
+      const text = String(await navigator.clipboard.readText().catch(() => ''));
+      const clip = C.isOwnPrompt(text) ? { block: null } : C.find(text, false);
       if (clip.block) { block = clip.block; source = 'el portapapeles'; }
       else if (page.newestIsTemplate) return { status: 'template' };
     }
@@ -178,8 +179,26 @@
     else modal('No encontré el bloque de estado', h('p',
       'Pulsa «Pedir estado», envía el mensaje y, cuando Claude responda con el bloque <<<ESTADO … ESTADO>>>, vuelve a pulsar «Guardar». También puedes pegarlo a mano en «Estado» del proyecto.'), [
       { label: 'Cerrar' },
+      { label: 'Guardar la conversación', onclick: guard(saveConversation) },
       { label: 'Pedir estado', kind: 'primary', onclick: () => { insert('checkpoint'); } }
     ]);
+  }
+
+  /** The conversation of the active tab, or '' when it is not a Claude page. */
+  async function readConversation() {
+    await refreshTab();
+    return String((await run(J.CONVERSATION).catch(() => '')) || '');
+  }
+
+  /** When Claude can no longer give the state (out of messages), the conversation itself is kept. */
+  async function saveConversation() {
+    const a = current();
+    const p = a && project(a.activeProjectId);
+    if (!p) return;
+    const text = await readConversation();
+    if (!text) return say('No pude leer la conversación de esta pestaña.');
+    const changed = await edit((d) => M.saveCheckpoint(d, p.id, a.slot, C.conversationBlock(p, text), 'conversation'));
+    say(changed ? 'Conversación guardada: viaja en el próximo traspaso.' : 'Esa conversación ya estaba guardada.');
   }
 
   async function startTransfer() {
@@ -190,10 +209,11 @@
     // Keep the newest state shown in this conversation before handing over.
     const r = await readState().catch(() => ({}));
     if (r.status === 'saved') say('Estado de la conversación guardado' + (r.progress >= 0 ? ' · ' + r.progress + '%' : ''));
-    transferDialog(a, p.id, r.status === 'template' || r.template);
+    const conversation = await readConversation();
+    transferDialog(a, p.id, r.status === 'template' || r.template, conversation, r.status !== 'saved' && r.status !== 'same');
   }
 
-  function transferDialog(from, id, unanswered) {
+  function transferDialog(from, id, unanswered, conversation, noBlock) {
     const p = project(id);
     const now = Date.now();
     const targets = accounts().filter((a) => a.slot !== from.slot);
@@ -202,14 +222,23 @@
     const free = targets.find((a) => !C.isPaused(a, now));
     if (free) target.value = String(free.slot);
     const pause = h('select', PAUSES.map(([label, ms]) => h('option', { value: ms }, label)));
+    const withConversation = h('input', { type: 'checkbox', checked: !!noBlock });
     modal('Pasar proyecto a otra cuenta', h('div',
       h('p.muted', '«' + p.name + '» · ' + p.progress + '%' + (C.hasState(p) ? ' · estado guardado ' + C.ago(p.stateTime)
         : ' · aún no hay estado guardado: se enviará el prompt de inicio.')),
       unanswered ? h('p.warn', 'Ojo: Claude aún no respondió al último «Pedir estado»; se pasará el estado guardado anterior.') : null,
       field('PASAR A', target),
-      field('PAUSAR «' + from.name + '» (límite alcanzado)', pause)), [
+      field('PAUSAR «' + from.name + '» (límite alcanzado)', pause),
+      conversation ? h('label.check', withConversation, noBlock
+        ? 'Pasar la conversación de esta pestaña (Claude no dejó un bloque de estado)'
+        : 'Pasar la conversación de esta pestaña en lugar del último estado') : null), [
       { label: 'Cancelar' },
-      { label: 'Pasar', kind: 'primary', onclick: () => moveProject(id, from.slot, Number(target.value), Number(pause.value)) }
+      { label: 'Pasar', kind: 'primary', onclick: async () => {
+        if (conversation && withConversation.checked) {
+          await edit((d) => M.saveCheckpoint(d, id, from.slot, C.conversationBlock(p, conversation), 'conversation'));
+        }
+        await moveProject(id, from.slot, Number(target.value), Number(pause.value));
+      } }
     ]);
   }
 

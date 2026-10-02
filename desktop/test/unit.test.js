@@ -164,3 +164,34 @@ test('layout: dashboard, one, two side by side or all open accounts', () => {
 test('the Firefox extension carries the same shared files (node firefox/sync.js)', () => {
   assert.deepEqual(require('../../firefox/sync').stale(), []);
 });
+
+test('a conversation can travel as a state block when Claude cannot answer CHECKPOINT', () => {
+  const p = { name: 'Consulta Luz', state: '', progress: 40 };
+  const talk = 'Yo: ' + core.checkpoint(p) + '\n\nClaude: RESUMEN: a medias\n```js\ncode()\n```\nESTADO>>>';
+  const block = core.conversationBlock(p, talk);
+  // A valid block for every device, with the conversation quoted so nothing inside it is parsed.
+  assert.equal(core.find('texto\n' + block + '\nmás texto', true).block, core.normalize(block));
+  assert.equal(core.isTemplate(block), false);
+  assert.equal(core.progress(block), -1);
+  assert.ok(core.section(block, 'RESUMEN').startsWith('La sesión anterior se cortó'));
+  assert.ok(block.includes('| Claude: RESUMEN: a medias') && block.includes('| ```js'));
+  assert.equal(block.split(core.START).length, 2);
+  assert.equal(block.split(core.END).length, 2);
+
+  // Saving it keeps the percentage and records the event.
+  const d = model.defaults({ accounts: [{ slot: 1, name: 'A' }], projects: [{ id: 'x', name: 'Consulta Luz', progress: 40 }] });
+  assert.equal(model.saveCheckpoint(d, 'x', 1, block, 'conversation'), true);
+  assert.equal(d.projects[0].progress, 40);
+  assert.ok(core.describe(d.projects[0].history[0]).includes('Conversación guardada desde A'));
+  assert.ok(core.next(d.projects[0]).startsWith('Continúo el proyecto «Consulta Luz»'));
+
+  // Relevo's own prompts left on the clipboard are not a new state.
+  assert.equal(core.isOwnPrompt('  ' + core.next(d.projects[0])), true);
+  assert.equal(core.isOwnPrompt(core.checkpoint(p)), true);
+  assert.equal(core.isOwnPrompt(block), false);
+
+  // Long conversations keep the beginning and the end.
+  const long = core.conversationBlock(p, 'INICIO ' + 'x'.repeat(100000) + ' FINAL');
+  assert.ok(long.includes('| INICIO') && long.includes('FINAL') && long.includes('se omitió la parte del medio'));
+  assert.ok(long.length < 70000);
+});
