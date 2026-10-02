@@ -1,0 +1,110 @@
+:root {
+  --bg: #f6f4ef;
+  --surface: #ffffff;
+  --surface2: #f0ece4;
+  --border: #e2dcd1;
+  --text: #1f1e1d;
+  --text2: #6b665e;
+  --accent: #c4623f;
+  --on-accent: #ffffff;
+  --banner: #fbe9dd;
+  --ok: #2e7d32;
+  --warn: #b35c00;
+  --danger: #c62828;
+  --shadow: 0 10px 40px rgba(31, 30, 29, .18);
+  --radius: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #191817;
+    --surface: #252422;
+    --surface2: #2f2d2a;
+    --border: #3a3834;
+    --text: #f1eee8;
+    --text2: #a9a49b;
+    --accent: #e07f5c;
+    --on-accent: #1a1110;
+    --banner: #3a2a22;
+    --ok: #72c177;
+    --warn: #ffb060;
+    --danger: #f07070;
+    --shadow: 0 10px 40px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
+button, input, select, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; padding: 6px 14px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface2); cursor: pointer;
+  white-space: nowrap; transition: filter .12s, background .12s;
+}
+.btn:hover { filter: brightness(.97); }
+@media (prefers-color-scheme: dark) { .btn:hover { filter: brightness(1.12); } }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn.quiet { background: transparent; border-color: transparent; color: var(--accent); }
+.btn.danger { background: var(--surface); color: var(--danger); }
+.btn.icon { min-width: 34px; padding: 4px 8px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px;
+}
+.muted { color: var(--text2); font-size: 13px; }
+.label { display: block; margin: 12px 0 4px; font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: .02em; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.row { display: flex; align-items: center; gap: 8px; }
+.grow { flex: 1; min-width: 0; }
+.buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.buttons .btn { flex: 1; }
+
+input[type=text], input[type=url], input[type=time], select, textarea {
+  width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg); outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 64px; }
+textarea.mono, .mono { font-family: "Cascadia Mono", Consolas, ui-monospace, monospace; font-size: 12.5px; }
+
+.progress { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin: 8px 0 6px; }
+.progress > i { display: block; height: 100%; background: var(--accent); }
+
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+.ok { color: var(--ok); }
+.warn { color: var(--warn); }
+
+/* Modal dialogs */
+.overlay {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(20, 18, 16, .42); z-index: 50;
+}
+.dialog {
+  width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); padding: 20px;
+}
+.dialog h2 { font-size: 18px; margin-bottom: 8px; }
+.dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.dialog .list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.dialog .list .btn { justify-content: flex-start; text-align: left; white-space: normal; }
+.swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+.swatches button { width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
+.swatches button.on { border-color: var(--text); }
+.check { display: flex; gap: 8px; align-items: center; margin-top: 12px; cursor: pointer; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 80;
+  background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 10px; box-shadow: var(--shadow);
+  max-width: min(560px, calc(100vw - 32px)); font-size: 13.5px;
+}

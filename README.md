@@ -66,6 +66,12 @@ En el iPhone las sesiones de todas las cuentas quedan abiertas: toca el nombre d
 
 Descarga [`dist/Relevo.apk`](dist/Relevo.apk) en el teléfono, ábrelo y permite «Instalar apps desconocidas». Cada cuenta abre su propia ventana (Recientes, pantalla dividida o DeX).
 
+### Firefox (prototipo)
+
+Extensión con un panel lateral: cada cuenta de Claude es un **contenedor de Firefox** (cookies separadas), así todas siguen con la sesión iniciada como pestañas de una sola ventana, y **«Continuar con Google» funciona** porque es el navegador de verdad. El panel tiene los mismos botones (Traspaso, Pedir estado, Guardar, Pasar) e inserta y lee el chat como la app de Windows. Firefox 149 o superior pone dos pestañas lado a lado (clic derecho en la pestaña → vista dividida).
+
+Para probarla: en Firefox abre `about:debugging#/runtime/this-firefox` → **Cargar complemento temporal…** → elige [`firefox/manifest.json`](firefox/manifest.json). El panel se abre con el botón de Relevo o `Alt+Shift+R`. Así cargada dura hasta cerrar Firefox; para dejarla instalada hay que firmarla en addons.mozilla.org (gratis, puede ser privada). Los proyectos de la app de Windows se pasan con Detalles → «Copiar JSON» y, en el panel, Proyectos → Importar.
+
 ## Iniciar sesión con Google
 
 Google **no permite** «Continuar con Google» dentro de ventanas integradas (WebView), porque no son un navegador completo, y Relevo no intenta saltarse esa protección. Si una ventana integrada intenta ir a Google, Relevo lo detiene y te explica las opciones:
@@ -132,6 +138,7 @@ ESTADO>>>
 | `desktop/` | Windows | Electron: una ventana con pestañas; cada cuenta es un `WebContentsView` con partición `persist:relevo-sN` (o Chrome/Edge con su propio `--user-data-dir`) | `cd desktop && npm ci && npm test && npm run dist:win` |
 | `ios/` | iPhone/iPad | SwiftUI + WKWebView con un `WKWebsiteDataStore(forIdentifier:)` por cuenta | `cd ios && xcodegen generate` y abrir en Xcode |
 | `app/` | Android | Java + WebView, un proceso con `setDataDirectorySuffix` por cuenta | `./gradlew assembleRelease` |
+| `firefox/` | Firefox | Extensión (panel lateral) con un contenedor (`contextualIdentities`) por cuenta; usa la misma lógica que Windows, copiada a `firefox/shared` | `node firefox/sync.js` tras cambiar `desktop/src`; `npx web-ext lint -s firefox` |
 
 GitHub Actions compila y prueba cada versión en cada push (`.github/workflows/`): pruebas unitarias en las tres, prueba de extremo a extremo con ventanas reales de Electron, pruebas de Robolectric en Android y pruebas en el simulador de iOS; además publica los instaladores como *Releases* y guarda las capturas en `docs/screens/`.
 

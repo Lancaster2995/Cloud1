@@ -160,3 +160,7 @@ test('layout: dashboard, one, two side by side or all open accounts', () => {
   assert.deepEqual([b.x, b.y], [501, 40]);
   assert.deepEqual([c.x, c.y, c.width, c.height], [0, 341, 1000, 299]); // last row uses the full width
 });
+
+test('the Firefox extension carries the same shared files (node firefox/sync.js)', () => {
+  assert.deepEqual(require('../../firefox/sync').stale(), []);
+});

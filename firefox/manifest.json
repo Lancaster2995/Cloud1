@@ -1,0 +1,31 @@
+{
+  "manifest_version": 2,
+  "name": "Relevo",
+  "version": "0.1.0",
+  "description": "Varias cuentas de Claude a la vez, cada una en su contenedor, y traspaso de proyectos entre ellas.",
+  "author": "lancaster2995",
+  "homepage_url": "https://github.com/Lancaster2995/Cloud1",
+  "icons": { "256": "shared/icon.png" },
+  "permissions": [
+    "contextualIdentities", "cookies", "tabs", "storage", "alarms", "notifications",
+    "clipboardRead", "clipboardWrite", "https://claude.ai/*"
+  ],
+  "background": { "scripts": ["shared/core.js", "background.js"] },
+  "sidebar_action": {
+    "default_title": "Relevo",
+    "default_panel": "sidebar.html",
+    "default_icon": "shared/icon.png",
+    "open_at_install": true
+  },
+  "browser_action": { "default_title": "Mostrar u ocultar Relevo", "default_icon": "shared/icon.png" },
+  "commands": {
+    "_execute_sidebar_action": { "suggested_key": { "default": "Alt+Shift+R" }, "description": "Mostrar u ocultar Relevo" }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "relevo@lancaster2995.github.io",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  }
+}
