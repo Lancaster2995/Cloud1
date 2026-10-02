@@ -14,6 +14,14 @@ struct SessionScreen: View {
         }
         .background(Theme.border)
         .sheet(item: $sessions.popup) { page in PopupSheet(page: page) }
+        .alert("Google no permite iniciar sesión aquí", isPresented: $sessions.googleBlocked) {
+            Button("Entrar con mi correo", role: .cancel) {}
+            Button("Abrir Claude en Safari") {
+                if let url = URL(string: Relevo.chatURL) { UIApplication.shared.open(url) }
+            }
+        } message: {
+            Text("Google bloquea el inicio de sesión dentro de apps porque no son un navegador completo, y Relevo no intenta saltarse esa protección.\n\nEntra con tu correo: escribe tu dirección de Gmail en el campo de correo de Claude y usa el código o enlace que te llega (si es un enlace, cópialo en Mail y ábrelo con ⋯ → «Abrir un enlace aquí»).\n\nO usa esa cuenta en Safari: Relevo copia los prompts (Detalles del proyecto) y tú los pegas.")
+        }
     }
 }
 

@@ -23,3 +23,9 @@ html, body { background: transparent; overflow: hidden; height: 100%; }
   padding: 5px 14px 6px; color: var(--accent); font-weight: 600; font-size: 13px; border-top: 1px solid var(--border);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* Integrated windows show navigation; the browser bar shows "open browser" instead. */
+#openBrowser { display: none; min-height: 30px; padding: 4px 10px; }
+body.chrome .nav { display: none; }
+body.chrome #openBrowser { display: inline-flex; }
+body.chrome, body.chrome html { background: var(--surface); }

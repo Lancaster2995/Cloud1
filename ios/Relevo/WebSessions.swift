@@ -14,6 +14,8 @@ final class WebSessions: NSObject, ObservableObject {
     static let shared = WebSessions()
 
     @Published var popup: PopupPage?
+    /// Set when a page tried to open Google sign-in, which Google does not allow inside apps.
+    @Published var googleBlocked = false
     @Published private(set) var loading: [Int: Bool] = [:]
     @Published private(set) var canGoBack: [Int: Bool] = [:]
 
@@ -27,14 +29,6 @@ final class WebSessions: NSObject, ObservableObject {
 
     func dataStore(_ slot: Int) -> WKWebsiteDataStore {
         WKWebsiteDataStore(forIdentifier: WebSessions.storeIdentifier(slot))
-    }
-
-    /// Mobile Safari's user agent, so sign-in providers treat the view like Safari.
-    private var userAgent: String {
-        let v = UIDevice.current.systemVersion.replacingOccurrences(of: ".", with: "_")
-        let short = UIDevice.current.systemVersion.split(separator: ".").prefix(2).joined(separator: ".")
-        let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad; CPU OS" : "iPhone; CPU iPhone OS"
-        return "Mozilla/5.0 (\(device) \(v) like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(short) Mobile/15E148 Safari/604.1"
     }
 
     func webView(for slot: Int, startURL: String) -> WKWebView {
@@ -56,7 +50,6 @@ final class WebSessions: NSObject, ObservableObject {
         v.navigationDelegate = self
         v.uiDelegate = self
         v.allowsBackForwardNavigationGestures = true
-        v.customUserAgent = userAgent
         v.isInspectable = true
         v.scrollView.keyboardDismissMode = .interactive
     }
@@ -132,6 +125,12 @@ final class WebSessions: NSObject, ObservableObject {
         return nil
     }
 
+    /// Google refuses sign-in inside embedded web views; those navigations are stopped and explained.
+    fileprivate func isGoogleSignIn(_ url: URL?) -> Bool {
+        guard let host = url?.host?.lowercased() else { return false }
+        return host == "accounts.google.com"
+    }
+
     fileprivate func isSignIn(_ url: URL?) -> Bool {
         guard let url else { return true }
         if url.absoluteString.isEmpty || url.absoluteString == "about:blank" { return true }
@@ -151,6 +150,12 @@ extension WebSessions: WKNavigationDelegate {
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else {
             decisionHandler(.allow)
+            return
+        }
+        if isGoogleSignIn(url) {
+            decisionHandler(.cancel)
+            if popup?.webView === webView { popup = nil }
+            googleBlocked = true
             return
         }
         if ["http", "https", "about", "data", "blob"].contains(scheme) {
@@ -188,11 +193,14 @@ extension WebSessions: WKUIDelegate {
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         let url = navigationAction.request.url
+        if isGoogleSignIn(url) {
+            googleBlocked = true
+            return nil
+        }
         if isSignIn(url) {
             let popupView = WKWebView(frame: .zero, configuration: configuration)
             popupView.navigationDelegate = self
             popupView.uiDelegate = self
-            popupView.customUserAgent = webView.customUserAgent
             popup = PopupPage(webView: popupView)
             return popupView
         }

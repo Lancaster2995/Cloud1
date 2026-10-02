@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execSync } = require('child_process');
 const { _electron: electron } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
@@ -153,6 +154,88 @@ test('handoff between two isolated account windows', async () => {
     await dash.waitForSelector('text=Historial');
     await dash.screenshot({ path: path.join(SHOTS, 'desktop-6-proyecto.png') });
   } finally {
+    await app.close();
+  }
+});
+
+
+test('account in the real browser (own profile) and Google sign-in notice', async (t) => {
+  // Use the test machine's Chromium/Chrome as "the user's browser".
+  const browser = ['/opt/pw-browsers/chromium', '/usr/bin/google-chrome', '/usr/bin/chromium'].find((p) => fs.existsSync(p));
+  if (!browser) {
+    t.skip('no hay navegador Chrome/Chromium en esta máquina');
+    return;
+  }
+  fs.mkdirSync(SHOTS, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-e2e-chrome-'));
+  seed(dir);
+  const file = path.join(dir, 'relevo.json');
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const respaldo = data.accounts.find((a) => a.slot === 3);
+  respaldo.browser = 'chrome';
+  respaldo.pausedUntil = 0;
+  respaldo.activeProjectId = 'p2';
+  fs.writeFileSync(file, JSON.stringify(data));
+
+  const app = await electron.launch({
+    args: [ROOT, '--no-sandbox'],
+    env: Object.assign({}, process.env, {
+      RELEVO_USER_DATA: dir, RELEVO_BROWSER: browser, RELEVO_BROWSER_ARGS: '--no-sandbox --disable-gpu --password-store=basic'
+    })
+  });
+  const profile = path.join(dir, 'chrome-profiles', 's3');
+  try {
+    const dash = await app.firstWindow();
+    await dash.waitForSelector('text=App de inventario');
+
+    // Opening the account starts the browser with the account's own profile and shows the bar.
+    await dash.evaluate(() => window.relevo.call('account:open', 3, 'normal'));
+    const bar = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=3') && u.includes('mode=chrome'));
+    await bar.waitForSelector('#account:has-text("Respaldo")');
+    assert.ok(await bar.isVisible('#openBrowser'));
+    assert.equal(await bar.isVisible('#back'), false);
+    const deadline = Date.now() + 15000;
+    while (!fs.existsSync(path.join(profile, 'Local State')) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
+    assert.ok(fs.existsSync(path.join(profile, 'Local State')), 'perfil del navegador creado');
+    assert.ok(execSync('ps -eo args').toString().includes('--user-data-dir=' + profile), 'navegador abierto con el perfil de la cuenta');
+
+    // Handoff: the prompt goes to the clipboard to paste in the browser.
+    await bar.click('[data-act=handoff]');
+    await bar.waitForSelector('#status:has-text("pega con Ctrl+V")');
+    const prompt = await app.evaluate(({ clipboard }) => clipboard.readText());
+    assert.ok(prompt.includes('Vamos a desarrollar el proyecto «Landing page»'));
+
+    // Save: the user copied Claude's status block in the browser.
+    await app.evaluate(({ clipboard }) => clipboard.writeText('<<<ESTADO\nPROYECTO: Landing page\nPROGRESO: 70%\nRESUMEN: Maquetada.\nSIGUIENTES_PASOS:\n- Publicar\nESTADO>>>'));
+    await bar.click('[data-act=save]');
+    await bar.waitForSelector('#status:has-text("Estado guardado desde el portapapeles")');
+    const saved = (await dash.evaluate(() => window.relevo.call('data'))).projects.find((x) => x.id === 'p2');
+    assert.equal(saved.progress, 70);
+    await bar.screenshot({ path: path.join(SHOTS, 'desktop-7-barra-navegador.png') });
+
+    // An integrated window stops Google sign-in and explains the options.
+    await dash.evaluate(() => window.relevo.call('account:open', 1, 'normal'));
+    const bar1 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1') && !u.includes('mode=chrome'));
+    const site1 = await pageMatching(app, (u) => u.includes('chat.html?who=1'));
+    await site1.waitForSelector('.ProseMirror');
+    await site1.evaluate(() => { location.href = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=prueba'; });
+    await bar1.waitForSelector('.dialog:has-text("Google no permite iniciar sesión aquí")');
+    assert.ok(site1.url().includes('chat.html'), 'la página no salió hacia Google');
+    await bar1.screenshot({ path: path.join(SHOTS, 'desktop-8-google.png') });
+
+    // "Abrir en Chrome" switches the account to the browser.
+    await bar1.click('.dialog .btn.primary');
+    await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1') && u.includes('mode=chrome'));
+    const after = (await dash.evaluate(() => window.relevo.call('data'))).accounts.find((a) => a.slot === 1);
+    assert.equal(after.browser, 'chrome');
+  } finally {
+    // Close the test browser first: it inherited the test harness's pipe to Electron, which would
+    // otherwise keep app.close() waiting. (In normal use the browser windows stay open on purpose.)
+    try {
+      execSync('pkill -f "user-data-dir=' + path.join(dir, 'chrome-profiles') + '"');
+    } catch (e) {
+      // Nothing left running.
+    }
     await app.close();
   }
 });

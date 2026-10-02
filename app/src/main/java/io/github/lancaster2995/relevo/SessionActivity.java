@@ -830,8 +830,7 @@ public abstract class SessionActivity extends Activity {
         if (def == null || !def.contains("Chrome/")) {
             def = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
         }
-        // Drop the WebView markers so sign-in providers treat this like mobile Chrome.
-        mobileUa = def.replace("; wv)", ")").replaceFirst("Version/\\d+(\\.\\d+)* ", "");
+        mobileUa = def;
         Matcher m = Pattern.compile("Chrome/([\\d.]+)").matcher(def);
         String version = m.find() ? m.group(1) : "124.0.0.0";
         desktopUa = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/"
@@ -880,6 +879,10 @@ public abstract class SessionActivity extends Activity {
     private class MainClient extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            if (isGoogleSignIn(request.getUrl())) {
+                showGoogleBlocked();
+                return true;
+            }
             return handleSpecialScheme(request.getUrl());
         }
 
@@ -992,6 +995,23 @@ public abstract class SessionActivity extends Activity {
         }
     }
 
+    /** Google refuses sign-in inside embedded web views; those navigations are stopped and explained. */
+    static boolean isGoogleSignIn(Uri uri) {
+        return uri != null && "accounts.google.com".equalsIgnoreCase(uri.getHost());
+    }
+
+    private void showGoogleBlocked() {
+        if (isFinishing()) return;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Google no permite iniciar sesión aquí")
+                .setMessage("Google bloquea el inicio de sesión dentro de apps porque no son un navegador completo, y Relevo no intenta saltarse esa protección.\n\n"
+                        + "Entra con tu correo: escribe tu dirección de Gmail en el campo de correo de Claude y usa el código o enlace que te llega (si es un enlace, cópialo y ábrelo con ⋮ → «Abrir un enlace aquí»).\n\n"
+                        + "O usa esa cuenta en tu navegador: Relevo copia los prompts y tú los pegas.")
+                .setNegativeButton("Entrar con mi correo", null)
+                .setPositiveButton("Abrir Claude en el navegador", (d, w) -> openExternal(Uri.parse(Data.URL_CHAT)))
+                .show();
+    }
+
     private void openExternal(Uri uri) {
         try {
             Intent i = new Intent(Intent.ACTION_VIEW, uri);
@@ -1034,6 +1054,14 @@ public abstract class SessionActivity extends Activity {
             }
 
             private boolean decide(WebView view, Uri uri) {
+                if (isGoogleSignIn(uri)) {
+                    main.post(() -> {
+                        if (popupWeb == view) closePopup();
+                        else view.destroy();
+                        showGoogleBlocked();
+                    });
+                    return true;
+                }
                 if (decided[0] || uri == null) return false;
                 String scheme = uri.getScheme();
                 if (scheme == null || "about".equals(scheme)) return false;

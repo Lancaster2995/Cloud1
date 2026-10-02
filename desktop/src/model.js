@@ -24,6 +24,7 @@ function defaults(d) {
     a.pausedUntil = a.pausedUntil || 0;
     a.lastActive = a.lastActive || 0;
     a.activeProjectId = a.activeProjectId || '';
+    a.browser = a.browser === 'chrome' ? 'chrome' : 'integrated';
   }
   for (const p of d.projects) normalizeProject(p);
   return d;
@@ -59,10 +60,11 @@ function upsertAccount(d, fields) {
     const slot = fields.slot || freeSlot(d);
     if (!slot) throw new Error('Máximo ' + MAX_SLOTS + ' cuentas');
     a = { slot, name: '', note: '', color: core.COLORS[(slot - 1) % core.COLORS.length], startUrl: core.URL_CHAT,
-      pausedUntil: 0, lastActive: 0, activeProjectId: '' };
+      pausedUntil: 0, lastActive: 0, activeProjectId: '', browser: 'integrated' };
     d.accounts.push(a);
   }
   for (const k of ['name', 'note', 'color', 'startUrl']) if (fields[k] !== undefined) a[k] = String(fields[k]).trim();
+  if (fields.browser !== undefined) a.browser = fields.browser === 'chrome' ? 'chrome' : 'integrated';
   if (!a.name) a.name = 'Cuenta ' + a.slot;
   if (!a.startUrl) a.startUrl = core.URL_CHAT;
   return a;

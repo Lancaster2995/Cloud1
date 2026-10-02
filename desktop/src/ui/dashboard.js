@@ -87,7 +87,7 @@
       summary ? h('p.summary', summary) : null,
       next ? h('div.next.muted', 'Siguiente: ' + next) : null,
       h('div.buttons',
-        h('button.btn.primary', { onclick: () => continueProject(p.id) }, 'Continuar'),
+        h('button.btn.primary', { onclick: () => continueProject(p.id).catch((e) => toast(e.message, 6000)) }, 'Continuar'),
         h('button.btn', { onclick: () => transferDialog(p.id, p.currentSlot) }, 'Pasar a…'),
         h('button.btn', { onclick: () => openDetail(p.id) }, 'Detalles')));
   }
@@ -200,7 +200,7 @@
         (C.hasState(p) ? ' · estado del ' + C.stamp(p.stateTime) : ' · sin estado guardado')),
       p.pendingSlot ? h('div.pending', '⏳ Traspaso pendiente → ' + C.accountName(data, p.pendingSlot)) : null,
       h('div.buttons',
-        h('button.btn.primary', { onclick: () => continueProject(p.id) }, 'Continuar'),
+        h('button.btn.primary', { onclick: () => continueProject(p.id).catch((e) => toast(e.message, 6000)) }, 'Continuar'),
         h('button.btn', { onclick: () => transferDialog(p.id, p.currentSlot) }, 'Pasar a…'))));
 
     const copy = async (label, text) => { await api('copy', text); toast(label + ' copiado'); };
@@ -279,7 +279,14 @@
   function renderAccounts() {
     content.appendChild(h('div.toolbar',
       h('button.btn.primary', { onclick: () => accountDialog(null) }, '+ Agregar cuenta'),
-      h('button.btn', { onclick: async () => { const n = await api('account:open-all'); toast(n ? 'Abiertas ' + n + ' ventanas' : 'No hay cuentas disponibles'); } }, 'Abrir disponibles'),
+      h('button.btn', { onclick: async () => {
+        try {
+          const n = await api('account:open-all');
+          toast(n ? 'Abiertas ' + n + ' cuentas' : 'No hay cuentas disponibles');
+        } catch (e) {
+          toast(e.message, 6000);
+        }
+      } }, 'Abrir disponibles'),
       h('button.btn', { onclick: async () => { const n = await api('tile'); toast(n ? 'Ventanas organizadas en mosaico' : 'No hay ventanas de cuentas abiertas'); } }, 'Organizar en mosaico')));
     const list = accounts();
     if (!list.length) {
@@ -309,7 +316,8 @@
     tickers.push(update);
     const p = project(a.activeProjectId);
     const info = (p ? 'Proyecto: ' + p.name + ' (' + p.progress + '%)' : 'Sin proyecto activo') + ' · activa ' + C.ago(a.lastActive)
-      + (a.startUrl === C.URL_CODE ? ' · Claude Code' : '');
+      + (a.startUrl === C.URL_CODE ? ' · Claude Code' : '')
+      + (a.browser === 'chrome' ? ' · se abre en el navegador' : ' · ventana integrada');
     return h('div.card.acard',
       h('div.head', h('span.dot', { style: { background: colorOf(a) } }),
         h('div.grow', h('h3', a.name), a.note ? h('div.muted', a.note) : null),
@@ -317,18 +325,31 @@
       status,
       h('div.muted', info),
       h('div.buttons',
-        h('button.btn.primary', { onclick: () => api('account:open', a.slot, 'normal') }, 'Abrir'),
-        h('button.btn', { onclick: () => api('account:open', a.slot, 'side') }, 'Al lado'),
+        h('button.btn.primary', { onclick: () => api('account:open', a.slot, 'normal').catch((e) => toast(e.message, 6000)) }, 'Abrir'),
+        h('button.btn', { onclick: () => api('account:open', a.slot, 'side').catch((e) => toast(e.message, 6000)) }, 'Al lado'),
         h('button.btn', { onclick: () => pauseDialog(a.slot) }, 'Pausa'),
         h('button.btn', { onclick: () => accountDialog(a) }, 'Editar')),
       h('div.buttons',
-        h('button.btn.quiet', { onclick: () => modal('Cerrar sesión de «' + a.name + '»', h('p', 'Se borrarán las cookies y los datos de navegación de esta cuenta en este equipo.'), [
+        h('button.btn.quiet', { onclick: () => modal('Cerrar sesión de «' + a.name + '»', h('p', a.browser === 'chrome'
+          ? 'Se borrará el perfil del navegador de esta cuenta (cookies, historial y sesión). Cierra antes sus ventanas del navegador.'
+          : 'Se borrarán las cookies y los datos de navegación de esta cuenta en este equipo.'), [
           { label: 'Cancelar' }, { label: 'Cerrar sesión', kind: 'primary', onclick: async () => { await api('account:logout', a.slot); toast('Sesión cerrada'); } }]) }, 'Cerrar sesión'),
         h('button.btn.quiet', { onclick: () => modal('Eliminar «' + a.name + '»', h('p', 'Se cerrará su ventana y se borrarán sus datos de sesión. Los proyectos se conservan.'), [
           { label: 'Cancelar' }, { label: 'Eliminar', kind: 'primary', onclick: () => api('account:delete', a.slot) }]) }, 'Eliminar')));
   }
 
   function accountDialog(a) {
+    const browser = h('select',
+      h('option', { value: 'chrome' }, 'Navegador (Chrome o Edge) con un perfil propio — permite iniciar sesión con Google'),
+      h('option', { value: 'integrated' }, 'Ventana integrada de Relevo — iniciar sesión con correo'));
+    browser.value = a ? (a.browser || 'integrated') : 'chrome';
+    const browserNote = h('p.muted', { style: { margin: '6px 0 0' } });
+    api('browser:info').then((info) => {
+      browserNote.textContent = info.path
+        ? 'Navegador detectado: ' + info.name + '. Cada cuenta usa su propio perfil, separado de tu navegador habitual.'
+        : 'No encontré Chrome ni Edge instalados: usa la ventana integrada o elige el navegador en Guía y ajustes.';
+      if (!a && !info.path) browser.value = 'integrated';
+    });
     const name = h('input', { type: 'text', value: a ? a.name : '', placeholder: 'p. ej. Personal' });
     const note = h('input', { type: 'text', value: a ? a.note : '', placeholder: 'correo, plan, uso… (opcional)' });
     let color = a ? a.color : C.COLORS[data.accounts.length % C.COLORS.length];
@@ -350,12 +371,14 @@
     syncUrl();
     modal(a ? 'Editar cuenta' : 'Nueva cuenta', h('div',
       field('NOMBRE', name), field('NOTA', note), h('span.label', 'COLOR'), sw,
+      field('ABRIR CON', browser), browserNote,
       field('PÁGINA DE INICIO', start), url), [
       { label: 'Cancelar' },
       { label: 'Guardar', kind: 'primary', onclick: async () => {
         let startUrl = start.value === 'other' ? url.value.trim() : start.value;
         if (startUrl && !/^https?:\/\//i.test(startUrl)) startUrl = 'https://' + startUrl;
-        const slot = await api('account:save', { slot: a ? a.slot : 0, name: name.value, note: note.value, color, startUrl: startUrl || C.URL_CHAT });
+        const slot = await api('account:save', { slot: a ? a.slot : 0, name: name.value, note: note.value, color,
+          startUrl: startUrl || C.URL_CHAT, browser: browser.value });
         if (!a) toast('Cuenta agregada: pulsa Abrir para iniciar sesión (ventana ' + slot + ')');
       } }
     ]);
@@ -395,11 +418,22 @@
   function renderGuide() {
     const auto = h('input', { type: 'checkbox', checked: !!data.autoInsert, onchange: () => api('set', 'autoInsert', auto.checked) });
     const section = (title, ...nodes) => h('div.card', h('h3', title), ...nodes);
+    const browserLine = h('p.muted', 'Buscando navegador…');
+    const loadBrowser = () => api('browser:info').then((info) => {
+      browserLine.textContent = info.path ? 'Navegador para las cuentas «en el navegador»: ' + info.name + ' (' + info.path + ')'
+        : 'No encontré Chrome ni Edge. Instala Google Chrome o elige el ejecutable del navegador.';
+    });
+    loadBrowser();
     content.appendChild(h('div.guide',
-      section('Ajustes', h('label.check', auto, 'Insertar los prompts directamente en el cuadro de mensaje (si no, solo se copian al portapapeles)')),
+      section('Ajustes', h('label.check', auto, 'Insertar los prompts directamente en el cuadro de mensaje de las ventanas integradas (si no, solo se copian al portapapeles)'),
+        browserLine,
+        h('div.buttons', h('button.btn', { onclick: async () => { const n = await api('browser:choose'); if (n) { toast('Navegador: ' + n); loadBrowser(); } } }, 'Elegir otro navegador…'))),
+      section('Iniciar sesión con Google', h('p', 'Google no permite iniciar sesión dentro de ventanas integradas porque no son un navegador completo. Para las cuentas de Google elige «Abrir con: Navegador» al crear o editar la cuenta: se abre en tu Chrome (o Edge) con un perfil propio para esa cuenta, separado de tu navegador habitual, y Relevo muestra encima una barra con los mismos botones.'),
+        h('p', 'En ese modo los prompts se copian al portapapeles (pega con Ctrl+V en el chat) y para «Guardar» copias la respuesta de Claude con el botón Copiar del bloque de código.'),
+        h('p', 'También puedes usar la ventana integrada entrando con tu correo: escribe tu dirección de Gmail en el campo de correo de Claude y usa el enlace o código que te llega.')),
       section('Cómo funciona', h('ol',
-        h('li', 'Cuentas: agrega cada cuenta de Claude que uses. Cada una abre su propia ventana con cookies separadas (como un perfil distinto de Chrome), así varias sesiones funcionan al mismo tiempo.'),
-        h('li', 'Inicia sesión una vez en cada ventana. Si «Continuar con Google» no funciona, usa tu correo. Si te llega un enlace, cópialo y ábrelo en la ventana de la cuenta con ⋯ → «Abrir un enlace aquí» (si lo abres en el navegador, la sesión quedaría allí).'),
+        h('li', 'Cuentas: agrega cada cuenta de Claude que uses. Cada una tiene su sesión separada: en tu navegador con un perfil propio, o en una ventana integrada de Relevo. Así varias sesiones funcionan al mismo tiempo.'),
+        h('li', 'Inicia sesión una vez en cada cuenta. Si usas «Continuar con Google», la cuenta debe abrirse en el navegador (ver «Iniciar sesión con Google»). En las ventanas integradas entra con tu correo; si te llega un enlace, cópialo y ábrelo con ⋯ → «Abrir un enlace aquí».'),
         h('li', 'Proyectos: crea un proyecto con su objetivo (y repositorio, si lo hay). En la ventana de una cuenta elige el proyecto en la barra superior y pulsa «📨 Traspaso»: el prompt de inicio queda en el cuadro de mensaje. Revísalo y envíalo.'))),
       section('Pasar el proyecto a otra cuenta', h('ol',
         h('li', 'Pulsa «🧭 Pedir estado» y envía el mensaje. Claude responde con un bloque <<<ESTADO … ESTADO>>>.'),

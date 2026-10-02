@@ -133,3 +133,12 @@ test('model: Android export imports as-is', () => {
   assert.equal(p.currentSlot, 0);
   assert.equal(p.history.length, 1);
 });
+
+test('model: accounts open in the browser or in an integrated window', () => {
+  const d = model.defaults({ accounts: [{ slot: 1, name: 'Vieja' }] });
+  assert.equal(d.accounts[0].browser, 'integrated');
+  const a = model.upsertAccount(d, { name: 'Google', browser: 'chrome' });
+  assert.equal(a.browser, 'chrome');
+  model.upsertAccount(d, { slot: a.slot, browser: 'otra-cosa' });
+  assert.equal(a.browser, 'integrated');
+});

@@ -397,7 +397,7 @@ public class MainActivity extends Activity {
 
         section("Cómo funciona",
                 "1. Cuentas: agrega cada cuenta de Claude que uses. Cada una abre su propia ventana (como un perfil de Chrome) con cookies separadas, así varias sesiones funcionan al mismo tiempo.\n\n"
-                        + "2. Inicia sesión una vez en cada ventana. Lo más fiable es con tu correo: si «Continuar con Google» se bloquea en la ventana integrada, usa el correo. Si el correo trae un enlace, mantenlo pulsado, cópialo y ábrelo con ⋮ → «Abrir un enlace aquí» para que la sesión quede en esa cuenta (y no en Chrome).\n\n"
+                        + "2. Inicia sesión una vez en cada ventana con tu correo (tu dirección de Gmail sirve: Claude te envía un código o enlace). Google no permite «Continuar con Google» dentro de apps porque no son un navegador completo. Si el correo trae un enlace, mantenlo pulsado, cópialo y ábrelo con ⋮ → «Abrir un enlace aquí» para que la sesión quede en esa cuenta (y no en Chrome).\n\n"
                         + "3. Proyectos: crea un proyecto con su objetivo (y repositorio, si lo hay). En la ventana de una cuenta elige el proyecto arriba y pulsa «📨 Traspaso»: se inserta el prompt de inicio en el chat. Revísalo y envíalo.");
         section("Pasar el proyecto a otra cuenta",
                 "1. En la ventana actual pulsa «🧭 Pedir estado» y envía el mensaje. Claude responde con un bloque <<<ESTADO … ESTADO>>> (hecho, en progreso, siguientes pasos, decisiones, archivos…).\n\n"

@@ -2,11 +2,15 @@
 /*
  * Relevo for Windows (Electron main process).
  *
- * Every Claude account gets its own window whose web contents live in a persistent session
- * partition ("persist:relevo-sN"), i.e. its own cookie jar, exactly like separate Chrome
- * profiles. A small toolbar view on top of each window drives the project handoff: insert the
- * start/handoff prompt, ask for a CHECKPOINT, save the status block and pass the project to
- * another account.
+ * Each Claude account opens in one of two ways:
+ *  - "chrome": the user's real Chrome/Edge with a separate profile directory per account
+ *    (chrome.js). Google sign-in works there. Relevo shows a small control bar for the account
+ *    and moves prompts and status blocks through the clipboard.
+ *  - "integrated": a Relevo window whose page lives in its own persistent session partition
+ *    ("persist:relevo-sN"). Google does not allow signing in inside embedded windows, so
+ *    Relevo stops that navigation and offers Chrome or e-mail sign-in instead.
+ * Either way the toolbar drives the handoff: start/handoff prompt, CHECKPOINT, save the status
+ * block and pass the project to another account.
  */
 const path = require('path');
 const {
@@ -18,6 +22,7 @@ const core = require('./shared/core');
 const model = require('./model');
 const inject = require('./inject');
 const Store = require('./store');
+const chrome = require('./chrome');
 
 const UI = path.join(__dirname, 'ui');
 const ICON = path.join(__dirname, 'ui', 'icon.png');
@@ -31,11 +36,6 @@ let dashboard = null;
 const sessions = new Map(); // slot -> SessionWindow
 const pauseTimers = new Map();
 
-// Present as regular Chrome so sign-in providers do not treat the window as an embedded app.
-app.userAgentFallback = app.userAgentFallback
-  .replace(/\s(relevo|Relevo)\/\S+/g, '')
-  .replace(/\sElectron\/\S+/g, '');
-
 const partitionOf = (slot) => 'persist:relevo-s' + slot;
 
 function hostMatches(url, domains) {
@@ -48,6 +48,10 @@ function hostMatches(url, domains) {
 }
 
 const isClaudeUrl = (url) => hostMatches(url, ['claude.ai', 'claude.com', 'anthropic.com']);
+/** Google refuses sign-in inside embedded windows; those navigations are stopped and explained. */
+const isGoogleSignIn = (url) => hostMatches(url, ['accounts.google.com']);
+const profileDirOf = (slot) => path.join(app.getPath('userData'), 'chrome-profiles', 's' + slot);
+const browserPath = () => chrome.find(store.data.browserPath);
 
 // ------------------------------------------------------------------ sessions (cookie jars)
 
@@ -57,7 +61,6 @@ function setupSession(slot) {
   const ses = session.fromPartition(partitionOf(slot));
   if (configuredSessions.has(ses)) return ses;
   configuredSessions.add(ses);
-  ses.setUserAgent(app.userAgentFallback);
   // Microphone (voice mode), clipboard and notifications only for Claude's own pages.
   const allowed = ['media', 'clipboard-read', 'clipboard-sanitized-write', 'notifications', 'fullscreen'];
   ses.setPermissionRequestHandler((wc, permission, cb, details) => {
@@ -100,11 +103,12 @@ function attachContextMenu(wc) {
 const BAR_HEIGHT = 50;
 
 class SessionWindow {
-  constructor(slot) {
+  constructor(slot, region) {
+    this.kind = 'integrated';
     this.slot = slot;
     const a = model.account(store.data, slot);
     const saved = store.data.windows[slot];
-    const bounds = saved && isOnScreen(saved) ? saved : defaultBounds(slot);
+    const bounds = region || (saved && isOnScreen(saved) ? saved : defaultBounds(slot));
     this.win = new BaseWindow(Object.assign({}, bounds, {
       minWidth: 420, minHeight: 360, title: 'Relevo · ' + a.name, icon: ICON,
       autoHideMenuBar: true, backgroundColor: nativeTheme.shouldUseDarkColors ? '#191817' : '#f6f4ef', show: false
@@ -163,7 +167,12 @@ class SessionWindow {
     const wc = this.site.webContents;
     const slot = this.slot;
     attachContextMenu(wc);
+    const googleBlocked = () => this.send('command', 'google-blocked');
     wc.setWindowOpenHandler(({ url }) => {
+      if (isGoogleSignIn(url)) {
+        googleBlocked();
+        return { action: 'deny' };
+      }
       // Sign-in pop-ups stay in this account's session; other links go to the default browser.
       if (url === 'about:blank' || hostMatches(url, SIGN_IN_DOMAINS)) {
         return {
@@ -177,8 +186,29 @@ class SessionWindow {
       if (/^https?:/i.test(url)) shell.openExternal(url);
       return { action: 'deny' };
     });
-    wc.on('did-create-window', (child) => attachContextMenu(child.webContents));
+    wc.on('did-create-window', (child) => {
+      attachContextMenu(child.webContents);
+      const stopGoogle = (e, url) => {
+        if (!isGoogleSignIn(url)) return;
+        e.preventDefault();
+        child.close();
+        googleBlocked();
+      };
+      child.webContents.on('will-navigate', stopGoogle);
+      child.webContents.on('will-redirect', stopGoogle);
+    });
+    wc.on('will-redirect', (e, url) => {
+      if (isGoogleSignIn(url)) {
+        e.preventDefault();
+        googleBlocked();
+      }
+    });
     wc.on('will-navigate', (e, url) => {
+      if (isGoogleSignIn(url)) {
+        e.preventDefault();
+        googleBlocked();
+        return;
+      }
       if (!/^(https?|about|data|blob):/i.test(url)) {
         e.preventDefault();
         shell.openExternal(url).catch(() => {});
@@ -211,7 +241,98 @@ class SessionWindow {
   async run(script) {
     return this.site.webContents.executeJavaScript(script, true);
   }
+
+  place(bounds) {
+    if (this.win.isMinimized()) this.win.restore();
+    if (this.win.isMaximized()) this.win.unmaximize();
+    this.win.setBounds(bounds);
+  }
 }
+
+const CHROME_BAR_FRAME = 40; // approximate title bar height of the control window
+
+/**
+ * An account that lives in the real browser. Relevo only shows its control bar (same toolbar
+ * page, "chrome" mode) and launches the browser with the account's own profile directory.
+ */
+class ChromeSession {
+  constructor(slot, region) {
+    this.kind = 'chrome';
+    this.slot = slot;
+    this.barHeight = 92;
+    this.overlay = false;
+    const a = model.account(store.data, slot);
+    const area = region || defaultBounds(slot);
+    const saved = store.data.windows['bar' + slot];
+    const barBounds = !region && saved && isOnScreen(saved) ? saved
+      : { x: area.x, y: area.y, width: area.width, height: this.barHeight + CHROME_BAR_FRAME };
+    this.win = new BrowserWindow({
+      x: barBounds.x, y: barBounds.y, width: barBounds.width, height: this.barHeight + CHROME_BAR_FRAME,
+      minWidth: 420, minHeight: 80, title: 'Relevo · ' + a.name + ' (Chrome)', icon: ICON, autoHideMenuBar: true,
+      maximizable: false, fullscreenable: false, show: false,
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#252422' : '#ffffff',
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
+    });
+    this.bar = { webContents: this.win.webContents };
+    attachContextMenu(this.win.webContents);
+    this.win.loadFile(path.join(UI, 'toolbar.html'), { query: { slot: String(slot), mode: 'chrome' } });
+    this.win.once('ready-to-show', () => this.win.show());
+    this.win.on('moved', () => this.saveBounds());
+    this.win.on('resized', () => this.saveBounds());
+    this.win.on('focus', () => store.edit((d) => { const acc = model.account(d, slot); if (acc) acc.lastActive = Date.now(); }));
+    this.win.on('closed', () => sessions.delete(slot));
+    this.browserArea = { x: area.x, y: area.y + this.barHeight + CHROME_BAR_FRAME + 4, width: area.width,
+      height: Math.max(360, area.height - this.barHeight - CHROME_BAR_FRAME - 4) };
+  }
+
+  /** Opens `url` (default: the account's start page) in the account's own browser profile. */
+  openBrowser(url) {
+    const exe = browserPath();
+    if (!exe) throw new Error('No encontré Google Chrome ni Microsoft Edge. Instálalo o elige el navegador en Guía y ajustes.');
+    const a = model.account(store.data, this.slot);
+    const dir = profileDirOf(this.slot);
+    chrome.prepareProfile(dir, 'Relevo · ' + (a ? a.name : 'Cuenta ' + this.slot));
+    chrome.launch(exe, dir, url || (a && a.startUrl) || core.URL_CHAT, this.browserArea);
+  }
+
+  layout() {
+    if (this.win.isDestroyed()) return;
+    const [width] = this.win.getContentSize();
+    this.win.setContentSize(width, this.overlay ? Math.max(this.barHeight, 620) : this.barHeight);
+  }
+
+  saveBounds() {
+    if (this.win.isDestroyed() || this.overlay) return;
+    store.data.windows['bar' + this.slot] = this.win.getBounds();
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => store.write(), 800);
+  }
+
+  place(bounds) {
+    this.win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: this.win.getBounds().height });
+    this.browserArea = { x: bounds.x, y: bounds.y + this.win.getBounds().height + 4, width: bounds.width,
+      height: Math.max(360, bounds.height - this.win.getBounds().height - 4) };
+  }
+
+  send(channel, payload) {
+    if (!this.win.isDestroyed()) this.win.webContents.send(channel, payload);
+  }
+
+  focus() {
+    if (this.win.isMinimized()) this.win.restore();
+    this.win.show();
+    this.win.focus();
+  }
+
+  async run() {
+    throw new Error('La cuenta está en el navegador');
+  }
+}
+
+const usesChrome = (slot) => {
+  const a = model.account(store.data, slot);
+  return !!a && a.browser === 'chrome';
+};
 
 function isOnScreen(b) {
   return screen.getAllDisplays().some((d) => {
@@ -228,43 +349,71 @@ function defaultBounds(slot) {
   return { x: wa.x + Math.min(40 + step, wa.width - width), y: wa.y + Math.min(20 + step, wa.height - height), width, height };
 }
 
+/**
+ * Opens (or brings back) an account. opts.region places it; opts.beside puts that window on the
+ * left half of its display and this account on the right half.
+ */
 function openSession(slot, opts = {}) {
   if (!model.account(store.data, slot)) {
     store.edit((d) => model.upsertAccount(d, { slot }));
   }
-  let s = sessions.get(slot);
-  if (!s) {
-    s = new SessionWindow(slot);
-    sessions.set(slot, s);
-  } else {
-    s.focus();
+  let region = opts.region || null;
+  if (opts.beside && !opts.beside.isDestroyed()) {
+    const wa = screen.getDisplayMatching(opts.beside.getBounds()).workArea;
+    const half = Math.floor(wa.width / 2);
+    const left = { x: wa.x, y: wa.y, width: half, height: wa.height };
+    const owner = [...sessions.values()].find((x) => x.win === opts.beside);
+    if (owner) {
+      owner.place(left);
+    } else {
+      if (opts.beside.isMaximized()) opts.beside.unmaximize();
+      opts.beside.setBounds(left);
+    }
+    region = { x: wa.x + half, y: wa.y, width: wa.width - half, height: wa.height };
   }
-  if (opts.beside) placeSideBySide(opts.beside, s.win);
+  const wantChrome = usesChrome(slot);
+  let s = sessions.get(slot);
+  if (s && (s.kind === 'chrome') !== wantChrome) {
+    s.win.close();
+    sessions.delete(slot);
+    s = null;
+  }
+  if (!s) {
+    if (wantChrome) {
+      if (!browserPath()) throw new Error('No encontré Google Chrome ni Microsoft Edge. Instálalo o elige el navegador en Guía y ajustes.');
+      s = new ChromeSession(slot, region);
+      sessions.set(slot, s);
+      s.openBrowser();
+      return s;
+    }
+    s = new SessionWindow(slot, region);
+    sessions.set(slot, s);
+    return s;
+  }
+  if (region) s.place(region);
+  s.focus();
+  if (s.kind === 'chrome' && !opts.barOnly) s.openBrowser();
   return s;
 }
 
-/** Puts `leftWin` on the left half and `rightWin` on the right half of its display. */
-function placeSideBySide(leftWin, rightWin) {
-  const wa = screen.getDisplayMatching(leftWin.getBounds()).workArea;
-  const half = Math.floor(wa.width / 2);
-  for (const w of [leftWin, rightWin]) if (w.isMaximized()) w.unmaximize();
-  leftWin.setBounds({ x: wa.x, y: wa.y, width: half, height: wa.height });
-  rightWin.setBounds({ x: wa.x + half, y: wa.y, width: wa.width - half, height: wa.height });
-  rightWin.focus();
+function gridCells(n) {
+  const wa = screen.getPrimaryDisplay().workArea;
+  const cols = Math.ceil(Math.sqrt(n));
+  const rows = Math.ceil(n / cols);
+  const w = Math.floor(wa.width / cols), h = Math.floor(wa.height / rows);
+  return Array.from({ length: n }, (_, i) => ({ x: wa.x + (i % cols) * w, y: wa.y + Math.floor(i / cols) * h, width: w, height: h }));
 }
 
-/** Arranges every open account window in a grid on the primary display. */
+/**
+ * Arranges the open accounts in a grid. Integrated windows move into their cell; for accounts in
+ * the browser only the control bar can be moved (the browser places its own windows).
+ */
 function tileSessions() {
-  const list = [...sessions.values()].filter((s) => !s.win.isDestroyed());
+  const list = [...sessions.values()].filter((s) => !s.win.isDestroyed()).sort((a, b) => a.slot - b.slot);
   if (!list.length) return 0;
-  const wa = screen.getPrimaryDisplay().workArea;
-  const cols = Math.ceil(Math.sqrt(list.length));
-  const rows = Math.ceil(list.length / cols);
-  const w = Math.floor(wa.width / cols), h = Math.floor(wa.height / rows);
-  list.sort((a, b) => a.slot - b.slot).forEach((s, i) => {
-    if (s.win.isMinimized()) s.win.restore();
-    if (s.win.isMaximized()) s.win.unmaximize();
-    s.win.setBounds({ x: wa.x + (i % cols) * w, y: wa.y + Math.floor(i / cols) * h, width: w, height: h });
+  const cells = gridCells(list.length);
+  list.forEach((s, i) => {
+    s.place(cells[i]);
     s.win.show();
   });
   return list.length;
@@ -349,6 +498,7 @@ function currentProjectOf(slot) {
 /** Copies the text and, if enabled, places it in the chat box (never sends it). */
 async function deliver(s, text, retries = 8) {
   clipboard.writeText(text);
+  if (s.kind === 'chrome') return 'chrome';
   if (!store.data.autoInsert) return 'copied';
   for (let i = 0; i <= retries; i++) {
     let r = 'fail';
@@ -364,6 +514,7 @@ async function deliver(s, text, retries = 8) {
 }
 
 function newChatUrlIfInConversation(s) {
+  if (s.kind === 'chrome') return null;
   try {
     const u = new URL(s.site.webContents.getURL());
     if (!u.hostname.endsWith('claude.ai')) return null;
@@ -374,6 +525,7 @@ function newChatUrlIfInConversation(s) {
 }
 
 async function readPageBlock(s) {
+  if (s.kind === 'chrome') return { block: null, newestIsTemplate: false };
   try {
     const text = await s.run(inject.PAGE_TEXT);
     return core.find(text, true);
@@ -401,11 +553,24 @@ function registerIpc() {
     return { slot: s ? s.slot : 0, version: app.getVersion(), platform: process.platform };
   });
   handle('copy', (e, text) => clipboard.writeText(String(text)));
-  handle('paste', () => clipboard.readText());
+  handle('paste', async () => String(await clipboard.readText()));
   handle('external', (e, url) => { if (/^https?:/i.test(url)) shell.openExternal(url); });
   handle('set', (e, key, value) => {
     if (!['autoInsert'].includes(key)) throw new Error('ajuste desconocido');
     store.edit((d) => { d[key] = value; });
+  });
+  handle('browser:info', () => {
+    const exe = browserPath();
+    return { path: exe || '', name: chrome.browserName(exe), custom: !!store.data.browserPath };
+  });
+  handle('browser:choose', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const opts = { title: 'Elegir navegador (chrome.exe o msedge.exe)', properties: ['openFile'],
+      filters: process.platform === 'win32' ? [{ name: 'Programa', extensions: ['exe'] }] : [] };
+    const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts));
+    if (r.canceled || !r.filePaths.length) return null;
+    store.edit((d) => { d.browserPath = r.filePaths[0]; });
+    return chrome.browserName(r.filePaths[0]);
   });
 
   // Accounts / windows.
@@ -415,15 +580,33 @@ function registerIpc() {
     if (s) s.win.close();
     await session.fromPartition(partitionOf(slot)).clearStorageData();
     await session.fromPartition(partitionOf(slot)).clearCache();
+    try {
+      fs.rmSync(profileDirOf(slot), { recursive: true, force: true });
+    } catch (err) {
+      // The browser may still have the profile open; it is reused if the slot is taken again.
+    }
     store.edit((d) => model.deleteAccount(d, slot));
     schedulePauses();
   });
   handle('account:logout', async (e, slot) => {
+    if (usesChrome(slot)) {
+      try {
+        fs.rmSync(profileDirOf(slot), { recursive: true, force: true });
+      } catch (err) {
+        throw new Error('Cierra primero las ventanas del navegador de esta cuenta y vuelve a intentarlo.');
+      }
+      return;
+    }
     await session.fromPartition(partitionOf(slot)).clearStorageData();
     await session.fromPartition(partitionOf(slot)).clearCache();
     const s = sessions.get(slot);
     const a = model.account(store.data, slot);
-    if (s) s.site.webContents.loadURL((a && a.startUrl) || core.URL_CHAT);
+    if (s && s.site) s.site.webContents.loadURL((a && a.startUrl) || core.URL_CHAT);
+  });
+  handle('account:use-chrome', (e, slot) => {
+    if (!browserPath()) throw new Error('No encontré Google Chrome ni Microsoft Edge. Instálalo o elige el navegador en Guía y ajustes.');
+    store.edit((d) => { const a = model.account(d, slot); if (a) a.browser = 'chrome'; });
+    openSession(slot);
   });
   handle('account:open', (e, slot, mode) => {
     const beside = mode === 'side' ? BrowserWindow.fromWebContents(e.sender) || (sessionFor(e.sender) || {}).win : null;
@@ -431,14 +614,10 @@ function registerIpc() {
   });
   handle('account:open-all', () => {
     const now = Date.now();
-    let n = 0;
-    for (const a of model.sortedAccounts(store.data)) {
-      if (core.isPaused(a, now)) continue;
-      openSession(a.slot);
-      n++;
-    }
-    if (n > 1) tileSessions();
-    return n;
+    const list = model.sortedAccounts(store.data).filter((a) => !core.isPaused(a, now));
+    const cells = gridCells(Math.max(1, list.length));
+    list.forEach((a, i) => openSession(a.slot, { region: list.length > 1 ? cells[i] : null }));
+    return list.length;
   });
   handle('tile', () => tileSessions());
   handle('account:pause', (e, slot, until) => {
@@ -524,6 +703,11 @@ function registerIpc() {
   handle('bar:nav', (e, action, url) => {
     const s = sessionFor(e.sender);
     if (!s) return;
+    if (s.kind === 'chrome') {
+      if (action === 'load' && url) s.openBrowser(/^https?:\/\//i.test(url) ? url : 'https://' + url);
+      else if (action === 'open-browser') s.openBrowser();
+      return;
+    }
     const wc = s.site.webContents;
     if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
     else if (action === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
@@ -540,6 +724,14 @@ function registerIpc() {
     if (!p) return { status: 'no-project' };
     if (kind === 'checkpoint') return { status: await deliver(s, core.checkpoint(p)) };
     const text = core.next(p);
+    if (s.kind === 'chrome') {
+      // A fresh chat in the account's browser, with the prompt ready to paste.
+      const a = model.account(store.data, s.slot);
+      s.openBrowser(a && a.startUrl === core.URL_CODE ? core.URL_CODE : core.URL_CHAT);
+      clipboard.writeText(text);
+      store.edit((d) => model.handoffDone(d, p.id, s.slot));
+      return { status: 'chrome-new' };
+    }
     const newChat = newChatUrlIfInConversation(s);
     if (newChat && where !== 'here' && where !== 'new') return { status: 'ask' };
     if (newChat && where === 'new') {
@@ -557,11 +749,12 @@ function registerIpc() {
     const page = await readPageBlock(s);
     let block = page.block, source = 'la conversación';
     if (!block || page.newestIsTemplate) {
-      const clip = core.find(clipboard.readText(), false);
+      // clipboard.readText() returns a promise in recent Electron versions; await works either way.
+      const clip = core.find(String(await clipboard.readText()), false);
       if (clip.block) { block = clip.block; source = 'el portapapeles'; }
       else if (page.newestIsTemplate) return { status: 'template' };
     }
-    if (!block) return { status: 'none' };
+    if (!block) return { status: s.kind === 'chrome' ? 'none-clipboard' : 'none' };
     const changed = store.edit((d) => model.saveCheckpoint(d, p.id, s.slot, block, 'checkpoint'));
     return { status: changed ? 'saved' : 'same', source, progress: core.progress(block), template: page.newestIsTemplate };
   });
@@ -572,8 +765,32 @@ function registerIpc() {
   handle('bar:menu', (e) => {
     const s = sessionFor(e.sender);
     if (!s) return;
-    const wc = s.site.webContents;
     const a = model.account(store.data, s.slot);
+    if (s.kind === 'chrome') {
+      Menu.buildFromTemplate([
+        { label: 'Abrir la ventana del navegador', click: () => s.openBrowser() },
+        { label: 'Nuevo chat', click: () => s.openBrowser(core.URL_CHAT) },
+        { label: 'Claude Code', click: () => s.openBrowser(core.URL_CODE) },
+        { type: 'separator' },
+        { label: 'Panel principal', click: () => openDashboard() },
+        { label: 'Abrir otra cuenta al lado…', click: () => s.send('command', 'open-beside') },
+        { label: 'Organizar en mosaico', click: () => tileSessions() },
+        { type: 'checkbox', label: 'Mantener esta barra siempre visible', checked: s.win.isAlwaysOnTop(),
+          click: (item) => s.win.setAlwaysOnTop(item.checked) },
+        { type: 'separator' },
+        { label: 'Pausar esta cuenta…', click: () => s.send('command', 'pause') },
+        { label: 'Pegar estado a mano…', click: () => s.send('command', 'manual-state') },
+        { label: 'Abrir en una ventana integrada de Relevo', click: () => {
+          store.edit((d) => { const acc = model.account(d, s.slot); if (acc) acc.browser = 'integrated'; });
+          openSession(s.slot);
+        } },
+        { type: 'separator' },
+        { label: 'Borrar el perfil del navegador de esta cuenta…', click: () => s.send('command', 'logout') },
+        { label: 'Cerrar esta barra', click: () => s.win.close() }
+      ]).popup();
+      return;
+    }
+    const wc = s.site.webContents;
     Menu.buildFromTemplate([
       { label: 'Nuevo chat', click: () => wc.loadURL(core.URL_CHAT) },
       { label: 'Claude Code', click: () => wc.loadURL(core.URL_CODE) },
@@ -586,6 +803,7 @@ function registerIpc() {
       { label: 'Pausar esta cuenta…', click: () => s.send('command', 'pause') },
       { label: 'Pegar estado a mano…', click: () => s.send('command', 'manual-state') },
       { label: 'Abrir un enlace aquí (p. ej. de inicio de sesión)…', click: () => s.send('command', 'open-link') },
+      { label: 'Abrir esta cuenta en Chrome (para iniciar sesión con Google)', click: () => s.send('command', 'google-blocked') },
       { type: 'checkbox', label: 'Insertar prompts en el chat', checked: store.data.autoInsert,
         click: (item) => store.edit((d) => { d.autoInsert = item.checked; }) },
       { type: 'separator' },
@@ -609,7 +827,7 @@ function focusedSession() {
 }
 
 function buildAppMenu() {
-  const onSite = (fn) => () => { const s = focusedSession(); if (s) fn(s.site.webContents, s); };
+  const onSite = (fn) => () => { const s = focusedSession(); if (s && s.site) fn(s.site.webContents, s); };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Archivo', submenu: [
       { label: 'Panel principal', accelerator: 'CmdOrCtrl+Shift+H', click: () => openDashboard() },
@@ -634,7 +852,7 @@ function buildAppMenu() {
       { type: 'separator' },
       { label: 'Herramientas de desarrollo', accelerator: 'CmdOrCtrl+Shift+I', click: () => {
         const s = focusedSession();
-        if (s) s.site.webContents.openDevTools({ mode: 'detach' });
+        if (s && s.site) s.site.webContents.openDevTools({ mode: 'detach' });
         else if (dashboard && dashboard.isFocused()) dashboard.webContents.openDevTools({ mode: 'detach' });
       } }
     ] }

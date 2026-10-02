@@ -6,7 +6,11 @@
   const api = (channel, ...args) => window.relevo.call(channel, ...args);
   const $ = (id) => document.getElementById(id);
 
-  const slot = Number(new URLSearchParams(location.search).get('slot')) || 0;
+  const params = new URLSearchParams(location.search);
+  const slot = Number(params.get('slot')) || 0;
+  /** "chrome": the account lives in the real browser; prompts and status go through the clipboard. */
+  const chromeMode = params.get('mode') === 'chrome';
+  if (chromeMode) document.body.classList.add('chrome');
   const PAUSES = [
     ['No pausar', 0], ['1 hora', 3600e3], ['2 horas', 7200e3], ['3 horas', 10800e3],
     ['5 horas', 18000e3], ['8 horas', 28800e3], ['24 horas', 86400e3]
@@ -71,6 +75,8 @@
   // ------------------------------------------------------------------ actions
 
   const DELIVERED = {
+    chrome: 'Copiado. Pega con Ctrl+V en el chat de esta cuenta en el navegador y envíalo.',
+    'chrome-new': 'Abrí un chat nuevo en el navegador y copié el prompt: pega con Ctrl+V y envíalo.',
     ok: 'Listo en el cuadro de mensaje: revísalo y envíalo.',
     copied: 'Copiado al portapapeles: pega con Ctrl+V en el cuadro de mensaje.',
     noel: 'Copiado. Abre un chat y pega con Ctrl+V.',
@@ -110,7 +116,29 @@
     else if (r.status === 'same') say('Ese estado ya estaba guardado.');
     else if (r.status === 'template') say('Claude aún no ha respondido con el estado. Espera a que termine y vuelve a pulsar Guardar.', 9000);
     else if (r.status === 'no-project') chooseProject(saveState);
+    else if (r.status === 'none-clipboard') noBlockInClipboard();
     else noBlockFound();
+  }
+
+  function noBlockInClipboard() {
+    modal('Copia primero la respuesta de Claude', h('p',
+      'En el navegador, cuando Claude responda al «Pedir estado», pulsa el botón Copiar del bloque de código (o selecciona el bloque <<<ESTADO … ESTADO>>> y pulsa Ctrl+C). Luego vuelve a pulsar «Guardar» aquí.'), [
+      { label: 'Cerrar' },
+      { label: 'Pegar a mano', onclick: () => { setTimeout(manualState, 50); } },
+      { label: 'Pedir estado', kind: 'primary', onclick: () => { insert('checkpoint'); } }
+    ]);
+  }
+
+  /** Google refuses sign-in inside embedded windows; explain the two ways that work. */
+  function googleBlocked() {
+    modal('Google no permite iniciar sesión aquí', h('div',
+      h('p', 'Google bloquea el inicio de sesión dentro de ventanas integradas porque no son un navegador completo, y Relevo no intenta saltarse esa protección. Tienes dos opciones:'),
+      h('ol',
+        h('li', h('strong', 'Abrir esta cuenta en Chrome'), ' (recomendado): se abre en tu Google Chrome (o Edge) con un perfil propio solo para esta cuenta. Ahí «Continuar con Google» funciona. Relevo queda como una barra encima para copiar los prompts y guardar el estado.'),
+        h('li', h('strong', 'Entrar con tu correo'), ': en la página de Claude escribe tu dirección de Gmail en el campo de correo y continúa; Claude te envía un enlace o código. Si es un enlace, cópialo y ábrelo con ⋯ → «Abrir un enlace aquí».'))), [
+      { label: 'Usar mi correo' },
+      { label: 'Abrir en Chrome', kind: 'primary', onclick: async () => { await api('account:use-chrome', slot); } }
+    ]);
   }
 
   function noBlockFound() {
@@ -249,6 +277,13 @@
   }
 
   function logout() {
+    if (chromeMode) {
+      modal('Borrar el perfil del navegador', h('p', 'Se borrará el perfil del navegador de «' + account().name + '» (cookies, historial y sesión de Claude) en este equipo. Cierra antes sus ventanas del navegador.'), [
+        { label: 'Cancelar' },
+        { label: 'Borrar perfil', kind: 'primary', onclick: async () => { await api('account:logout', slot); say('Perfil borrado'); } }
+      ]);
+      return;
+    }
     modal('Cerrar sesión', h('p', 'Se borrarán las cookies y datos de «' + account().name + '» en este equipo. Tendrás que volver a iniciar sesión.'), [
       { label: 'Cancelar' },
       { label: 'Cerrar sesión', kind: 'primary', onclick: async () => { await api('account:logout', slot); say('Sesión cerrada'); } }
@@ -291,11 +326,24 @@
   $('home').addEventListener('click', () => api('dashboard'));
   $('more').addEventListener('click', () => api('bar:menu'));
 
-  const COMMANDS = { 'open-beside': openBeside, pause: pauseDialog, 'manual-state': manualState, 'open-link': openLink, logout };
+  const COMMANDS = { 'open-beside': openBeside, pause: pauseDialog, 'manual-state': manualState, 'open-link': openLink, logout,
+    'google-blocked': googleBlocked };
   window.relevo.on('command', (c) => COMMANDS[c] && run(COMMANDS[c])());
   window.relevo.on('data', (d) => { data = d; render(); });
   window.relevo.on('nav', (n) => { $('back').disabled = !n.canGoBack; $('forward').disabled = !n.canGoForward; });
   window.relevo.on('loading', (on) => { $('loading').hidden = !on; });
+  $('openBrowser').addEventListener('click', run(() => api('bar:nav', 'open-browser')));
+  if (chromeMode) {
+    for (const b of document.querySelectorAll('[data-act]')) {
+      const tips = {
+        handoff: 'Abre un chat nuevo en el navegador y copia el prompt para pegarlo',
+        checkpoint: 'Copia el mensaje que pide a Claude el bloque de estado',
+        save: 'Guarda el bloque de estado que copiaste de la respuesta de Claude',
+        transfer: 'Pasa el proyecto a otra cuenta'
+      };
+      b.title = tips[b.dataset.act] || b.title;
+    }
+  }
   $('back').disabled = true;
   $('forward').disabled = true;
   api('data').then((d) => { data = d; render(); });
