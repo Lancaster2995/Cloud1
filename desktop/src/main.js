@@ -2,19 +2,21 @@
 /*
  * Relevo for Windows (Electron main process).
  *
+ * Everything lives in one window: its own page is the tab strip (shell.html) and below it shows
+ * either the dashboard or the open accounts (one, two side by side, or all in a grid).
  * Each Claude account opens in one of two ways:
+ *  - "integrated" (default): a pane inside Relevo whose page lives in its own persistent session
+ *    partition ("persist:relevo-sN"). Google does not allow signing in inside embedded pages, so
+ *    Relevo stops that navigation and offers e-mail sign-in or the external browser instead.
  *  - "chrome": the user's real Chrome/Edge with a separate profile directory per account
- *    (chrome.js). Google sign-in works there. Relevo shows a small control bar for the account
- *    and moves prompts and status blocks through the clipboard.
- *  - "integrated": a Relevo window whose page lives in its own persistent session partition
- *    ("persist:relevo-sN"). Google does not allow signing in inside embedded windows, so
- *    Relevo stops that navigation and offers Chrome or e-mail sign-in instead.
+ *    (chrome.js). Google sign-in works there. The pane only shows the account's control bar and
+ *    moves prompts and status blocks through the clipboard.
  * Either way the toolbar drives the handoff: start/handoff prompt, CHECKPOINT, save the status
  * block and pass the project to another account.
  */
 const path = require('path');
 const {
-  app, BaseWindow, BrowserWindow, WebContentsView, ipcMain, Menu, Notification, shell, clipboard,
+  app, BrowserWindow, WebContentsView, ipcMain, Menu, Notification, shell, clipboard,
   screen, session, dialog, nativeTheme
 } = require('electron');
 const fs = require('fs');
@@ -32,9 +34,13 @@ const SIGN_IN_DOMAINS = ['claude.ai', 'claude.com', 'anthropic.com', 'google.com
 if (process.env.RELEVO_USER_DATA) app.setPath('userData', process.env.RELEVO_USER_DATA);
 
 let store;
-let dashboard = null;
-const sessions = new Map(); // slot -> SessionWindow
+let main = null; // the Relevo window; its own page is the tab strip
+let dash = null; // dashboard view inside it
+const sessions = new Map(); // slot -> SessionPane | ChromePane
+/** active: slot in front (0 = dashboard); mode: single | split | grid; recent: open slots, newest first. */
+const tabs = { active: 0, mode: 'single', recent: [] };
 const pauseTimers = new Map();
+const bgColor = () => (nativeTheme.shouldUseDarkColors ? '#191817' : '#f6f4ef');
 
 const partitionOf = (slot) => 'persist:relevo-s' + slot;
 
@@ -98,69 +104,71 @@ function attachContextMenu(wc) {
   });
 }
 
-// ------------------------------------------------------------------ session windows
+// ------------------------------------------------------------------ account panes
 
 const BAR_HEIGHT = 50;
+const STRIP_HEIGHT = 42; // tab strip at the top of the window (shell.html)
+const ownPagePrefs = () => ({ preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true });
 
-class SessionWindow {
-  constructor(slot, region) {
-    this.kind = 'integrated';
+/** The views of one account inside the main window, hidden while the account is not on screen. */
+class Pane {
+  constructor(slot, views) {
     this.slot = slot;
-    const a = model.account(store.data, slot);
-    const saved = store.data.windows[slot];
-    const bounds = region || (saved && isOnScreen(saved) ? saved : defaultBounds(slot));
-    this.win = new BaseWindow(Object.assign({}, bounds, {
-      minWidth: 420, minHeight: 360, title: 'Relevo · ' + a.name, icon: ICON,
-      autoHideMenuBar: true, backgroundColor: nativeTheme.shouldUseDarkColors ? '#191817' : '#f6f4ef', show: false
-    }));
+    this.views = views;
+    this.rect = null;
+    this.overlay = false;
+    for (const v of views) {
+      v.setVisible(false);
+      main.contentView.addChildView(v);
+      v.webContents.on('focus', () => markActive(slot));
+    }
+  }
+
+  /** Shows the pane in `rect` (window content coordinates), or hides it with null. */
+  show(rect) {
+    this.rect = rect;
+    for (const v of this.views) v.setVisible(!!rect);
+    this.layout();
+  }
+
+  send(channel, payload) {
+    if (!this.bar.webContents.isDestroyed()) this.bar.webContents.send(channel, payload);
+  }
+
+  close() {
+    for (const v of this.views) {
+      if (main && !main.isDestroyed()) main.contentView.removeChildView(v);
+      if (!v.webContents.isDestroyed()) v.webContents.close();
+    }
+  }
+}
+
+/** Claude inside Relevo: the toolbar on top and the account's page (own cookie jar) below. */
+class SessionPane extends Pane {
+  constructor(slot) {
     setupSession(slot);
-    this.site = new WebContentsView({
+    const site = new WebContentsView({
       webPreferences: { partition: partitionOf(slot), contextIsolation: true, sandbox: true, spellcheck: true }
     });
-    this.bar = new WebContentsView({
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
-    });
-    this.bar.setBackgroundColor('#00000000');
-    this.win.contentView.addChildView(this.site);
-    this.win.contentView.addChildView(this.bar);
+    const bar = new WebContentsView({ webPreferences: ownPagePrefs() });
+    site.setBackgroundColor(bgColor());
+    bar.setBackgroundColor('#00000000');
+    super(slot, [site, bar]);
+    this.kind = 'integrated';
+    this.site = site;
+    this.bar = bar;
     this.barHeight = BAR_HEIGHT;
-    this.overlay = false;
-    this.layout();
-
-    this.win.on('resize', () => this.layout());
-    this.win.on('resized', () => this.saveBounds());
-    this.win.on('moved', () => this.saveBounds());
-    this.win.on('focus', () => {
-      store.edit((d) => {
-        const acc = model.account(d, slot);
-        if (acc) acc.lastActive = Date.now();
-      });
-    });
-    this.win.on('closed', () => {
-      sessions.delete(slot);
-      for (const v of [this.site, this.bar]) if (!v.webContents.isDestroyed()) v.webContents.close();
-    });
-
     this.setupSite();
-    attachContextMenu(this.bar.webContents);
-    this.bar.webContents.loadFile(path.join(UI, 'toolbar.html'), { query: { slot: String(slot) } });
-    this.site.webContents.loadURL(a.startUrl || core.URL_CHAT);
-    this.win.show();
+    attachContextMenu(bar.webContents);
+    bar.webContents.loadFile(path.join(UI, 'toolbar.html'), { query: { slot: String(slot) } });
+    site.webContents.loadURL(model.account(store.data, slot).startUrl || core.URL_CHAT);
   }
 
   layout() {
-    if (this.win.isDestroyed()) return;
-    const { width, height } = this.win.getContentBounds();
-    this.bar.setBounds({ x: 0, y: 0, width, height: this.overlay ? height : this.barHeight });
-    this.site.setBounds({ x: 0, y: this.barHeight, width, height: Math.max(0, height - this.barHeight) });
-  }
-
-  saveBounds() {
-    if (this.win.isDestroyed() || this.win.isMinimized() || this.win.isMaximized()) return;
-    const b = this.win.getBounds();
-    store.data.windows[this.slot] = b;
-    clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => store.write(), 800);
+    if (!this.rect) return;
+    const { x, y, width, height } = this.rect;
+    this.bar.setBounds({ x, y, width, height: this.overlay ? height : this.barHeight });
+    this.site.setBounds({ x, y: y + this.barHeight, width, height: Math.max(0, height - this.barHeight) });
   }
 
   setupSite() {
@@ -178,7 +186,7 @@ class SessionWindow {
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
-            width: 520, height: 720, autoHideMenuBar: true, icon: ICON,
+            parent: main, width: 520, height: 720, autoHideMenuBar: true, icon: ICON,
             webPreferences: { partition: partitionOf(slot), contextIsolation: true, sandbox: true }
           }
         };
@@ -214,10 +222,6 @@ class SessionWindow {
         shell.openExternal(url).catch(() => {});
       }
     });
-    wc.on('page-title-updated', (e, title) => {
-      const a = model.account(store.data, slot);
-      if (a && !this.win.isDestroyed()) this.win.setTitle(a.name + ' · ' + title + ' — Relevo');
-    });
     const notifyNav = () => this.send('nav', {
       canGoBack: wc.navigationHistory.canGoBack(), canGoForward: wc.navigationHistory.canGoForward(), url: wc.getURL()
     });
@@ -228,61 +232,24 @@ class SessionWindow {
     wc.on('render-process-gone', () => setTimeout(() => !wc.isDestroyed() && wc.reload(), 500));
   }
 
-  send(channel, payload) {
-    if (!this.bar.webContents.isDestroyed()) this.bar.webContents.send(channel, payload);
-  }
-
-  focus() {
-    if (this.win.isMinimized()) this.win.restore();
-    this.win.show();
-    this.win.focus();
-  }
-
   async run(script) {
     return this.site.webContents.executeJavaScript(script, true);
   }
-
-  place(bounds) {
-    if (this.win.isMinimized()) this.win.restore();
-    if (this.win.isMaximized()) this.win.unmaximize();
-    this.win.setBounds(bounds);
-  }
 }
 
-const CHROME_BAR_FRAME = 40; // approximate title bar height of the control window
-
 /**
- * An account that lives in the real browser. Relevo only shows its control bar (same toolbar
- * page, "chrome" mode) and launches the browser with the account's own profile directory.
+ * An account that lives in the real browser. Its pane only holds the control bar (same toolbar
+ * page, "chrome" mode); Relevo launches the browser with the account's own profile directory.
  */
-class ChromeSession {
-  constructor(slot, region) {
+class ChromePane extends Pane {
+  constructor(slot) {
+    const bar = new WebContentsView({ webPreferences: ownPagePrefs() });
+    bar.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#252422' : '#ffffff');
+    super(slot, [bar]);
     this.kind = 'chrome';
-    this.slot = slot;
-    this.barHeight = 92;
-    this.overlay = false;
-    const a = model.account(store.data, slot);
-    const area = region || defaultBounds(slot);
-    const saved = store.data.windows['bar' + slot];
-    const barBounds = !region && saved && isOnScreen(saved) ? saved
-      : { x: area.x, y: area.y, width: area.width, height: this.barHeight + CHROME_BAR_FRAME };
-    this.win = new BrowserWindow({
-      x: barBounds.x, y: barBounds.y, width: barBounds.width, height: this.barHeight + CHROME_BAR_FRAME,
-      minWidth: 420, minHeight: 80, title: 'Relevo · ' + a.name + ' (Chrome)', icon: ICON, autoHideMenuBar: true,
-      maximizable: false, fullscreenable: false, show: false,
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#252422' : '#ffffff',
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
-    });
-    this.bar = { webContents: this.win.webContents };
-    attachContextMenu(this.win.webContents);
-    this.win.loadFile(path.join(UI, 'toolbar.html'), { query: { slot: String(slot), mode: 'chrome' } });
-    this.win.once('ready-to-show', () => this.win.show());
-    this.win.on('moved', () => this.saveBounds());
-    this.win.on('resized', () => this.saveBounds());
-    this.win.on('focus', () => store.edit((d) => { const acc = model.account(d, slot); if (acc) acc.lastActive = Date.now(); }));
-    this.win.on('closed', () => sessions.delete(slot));
-    this.browserArea = { x: area.x, y: area.y + this.barHeight + CHROME_BAR_FRAME + 4, width: area.width,
-      height: Math.max(360, area.height - this.barHeight - CHROME_BAR_FRAME - 4) };
+    this.bar = bar;
+    attachContextMenu(bar.webContents);
+    bar.webContents.loadFile(path.join(UI, 'toolbar.html'), { query: { slot: String(slot), mode: 'chrome' } });
   }
 
   /** Opens `url` (default: the account's start page) in the account's own browser profile. */
@@ -292,36 +259,11 @@ class ChromeSession {
     const a = model.account(store.data, this.slot);
     const dir = profileDirOf(this.slot);
     chrome.prepareProfile(dir, 'Relevo · ' + (a ? a.name : 'Cuenta ' + this.slot));
-    chrome.launch(exe, dir, url || (a && a.startUrl) || core.URL_CHAT, this.browserArea);
+    chrome.launch(exe, dir, url || (a && a.startUrl) || core.URL_CHAT);
   }
 
   layout() {
-    if (this.win.isDestroyed()) return;
-    const [width] = this.win.getContentSize();
-    this.win.setContentSize(width, this.overlay ? Math.max(this.barHeight, 620) : this.barHeight);
-  }
-
-  saveBounds() {
-    if (this.win.isDestroyed() || this.overlay) return;
-    store.data.windows['bar' + this.slot] = this.win.getBounds();
-    clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => store.write(), 800);
-  }
-
-  place(bounds) {
-    this.win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: this.win.getBounds().height });
-    this.browserArea = { x: bounds.x, y: bounds.y + this.win.getBounds().height + 4, width: bounds.width,
-      height: Math.max(360, bounds.height - this.win.getBounds().height - 4) };
-  }
-
-  send(channel, payload) {
-    if (!this.win.isDestroyed()) this.win.webContents.send(channel, payload);
-  }
-
-  focus() {
-    if (this.win.isMinimized()) this.win.restore();
-    this.win.show();
-    this.win.focus();
+    if (this.rect) this.bar.setBounds(this.rect);
   }
 
   async run() {
@@ -341,82 +283,112 @@ function isOnScreen(b) {
   });
 }
 
-function defaultBounds(slot) {
-  const wa = screen.getPrimaryDisplay().workArea;
-  const width = Math.min(1100, Math.round(wa.width * 0.62));
-  const height = Math.min(900, Math.round(wa.height * 0.86));
-  const step = 32 * ((slot - 1) % 8);
-  return { x: wa.x + Math.min(40 + step, wa.width - width), y: wa.y + Math.min(20 + step, wa.height - height), width, height };
+// ------------------------------------------------------------------ tabs and layout
+
+const tabState = () => ({ active: tabs.active, mode: tabs.mode, open: [...sessions.keys()], shown: model.shownSlots(tabs) });
+
+/** Places the dashboard or the accounts on screen under the tab strip and refreshes the strip. */
+function relayout() {
+  if (!main || main.isDestroyed()) return;
+  const { width, height } = main.getContentBounds();
+  const area = { x: 0, y: STRIP_HEIGHT, width, height: Math.max(0, height - STRIP_HEIGHT) };
+  const shown = model.shownSlots(tabs);
+  const cells = model.gridCells(area, shown.length);
+  for (const s of sessions.values()) {
+    const i = shown.indexOf(s.slot);
+    s.show(i < 0 ? null : cells[i]);
+  }
+  dash.setBounds(area);
+  dash.setVisible(!shown.length);
+  sendTabs();
 }
 
-/**
- * Opens (or brings back) an account. opts.region places it; opts.beside puts that window on the
- * left half of its display and this account on the right half.
- */
+function sendTabs() {
+  if (!main || main.isDestroyed()) return;
+  const a = model.account(store.data, tabs.active);
+  main.setTitle(a ? a.name + ' — Relevo' : 'Relevo');
+  main.webContents.send('tabs', tabState());
+}
+
+function focusMain() {
+  if (!main || main.isDestroyed()) return;
+  if (main.isMinimized()) main.restore();
+  main.show();
+  main.focus();
+}
+
+const touch = (slot) => store.edit((d) => { const a = model.account(d, slot); if (a) a.lastActive = Date.now(); });
+
+/** Brings `slot` (0 = dashboard) to the front, optionally switching the layout mode. */
+function showTab(slot, mode) {
+  if (mode) tabs.mode = mode;
+  const s = sessions.get(slot);
+  tabs.active = s ? slot : 0;
+  if (s) {
+    tabs.recent = [slot, ...tabs.recent.filter((x) => x !== slot)];
+    touch(slot);
+  }
+  relayout();
+  focusMain();
+  (s ? s.site || s.bar : dash).webContents.focus();
+}
+
+/** A pane got the keyboard focus (a click inside it when several are on screen). */
+function markActive(slot) {
+  if (tabs.active === slot || !sessions.has(slot)) return;
+  tabs.active = slot;
+  tabs.recent = [slot, ...tabs.recent.filter((x) => x !== slot)];
+  touch(slot);
+  relayout();
+}
+
+function closePane(slot) {
+  const s = sessions.get(slot);
+  if (!s) return;
+  sessions.delete(slot);
+  tabs.recent = tabs.recent.filter((x) => x !== slot);
+  if (tabs.active === slot) tabs.active = tabs.recent[0] || 0;
+  s.close();
+  relayout();
+}
+
+/** Opens (or brings back) an account's tab. opts.beside shows that open account and this one side by side. */
 function openSession(slot, opts = {}) {
   if (!model.account(store.data, slot)) {
     store.edit((d) => model.upsertAccount(d, { slot }));
   }
-  let region = opts.region || null;
-  if (opts.beside && !opts.beside.isDestroyed()) {
-    const wa = screen.getDisplayMatching(opts.beside.getBounds()).workArea;
-    const half = Math.floor(wa.width / 2);
-    const left = { x: wa.x, y: wa.y, width: half, height: wa.height };
-    const owner = [...sessions.values()].find((x) => x.win === opts.beside);
-    if (owner) {
-      owner.place(left);
-    } else {
-      if (opts.beside.isMaximized()) opts.beside.unmaximize();
-      opts.beside.setBounds(left);
-    }
-    region = { x: wa.x + half, y: wa.y, width: wa.width - half, height: wa.height };
-  }
   const wantChrome = usesChrome(slot);
   let s = sessions.get(slot);
   if (s && (s.kind === 'chrome') !== wantChrome) {
-    s.win.close();
-    sessions.delete(slot);
+    closePane(slot);
     s = null;
   }
   if (!s) {
-    if (wantChrome) {
-      if (!browserPath()) throw new Error('No encontré Google Chrome ni Microsoft Edge. Instálalo o elige el navegador en Guía y ajustes.');
-      s = new ChromeSession(slot, region);
-      sessions.set(slot, s);
-      s.openBrowser();
-      return s;
-    }
-    s = new SessionWindow(slot, region);
+    if (wantChrome && !browserPath()) throw new Error('No encontré Google Chrome ni Microsoft Edge. Instálalo o elige el navegador en Guía y ajustes.');
+    s = wantChrome ? new ChromePane(slot) : new SessionPane(slot);
     sessions.set(slot, s);
-    return s;
+    if (wantChrome) s.openBrowser();
   }
-  if (region) s.place(region);
-  s.focus();
-  if (s.kind === 'chrome' && !opts.barOnly) s.openBrowser();
+  let mode = null;
+  if (opts.beside && opts.beside !== slot && sessions.has(opts.beside)) {
+    tabs.recent = [opts.beside, ...tabs.recent.filter((x) => x !== opts.beside)];
+    mode = 'split';
+  }
+  showTab(slot, mode);
   return s;
 }
 
-function gridCells(n) {
-  const wa = screen.getPrimaryDisplay().workArea;
-  const cols = Math.ceil(Math.sqrt(n));
-  const rows = Math.ceil(n / cols);
-  const w = Math.floor(wa.width / cols), h = Math.floor(wa.height / rows);
-  return Array.from({ length: n }, (_, i) => ({ x: wa.x + (i % cols) * w, y: wa.y + Math.floor(i / cols) * h, width: w, height: h }));
+/** Shows every open account at once, in a grid. */
+function tileSessions() {
+  if (sessions.size) showTab(tabs.active || tabs.recent[0], 'grid');
+  return sessions.size;
 }
 
-/**
- * Arranges the open accounts in a grid. Integrated windows move into their cell; for accounts in
- * the browser only the control bar can be moved (the browser places its own windows).
- */
-function tileSessions() {
-  const list = [...sessions.values()].filter((s) => !s.win.isDestroyed()).sort((a, b) => a.slot - b.slot);
-  if (!list.length) return 0;
-  const cells = gridCells(list.length);
-  list.forEach((s, i) => {
-    s.place(cells[i]);
-    s.win.show();
-  });
-  return list.length;
+/** Ctrl+Tab: next tab (dashboard first, then the open accounts by slot). */
+function cycleTab(step) {
+  const order = [0, ...[...sessions.keys()].sort((a, b) => a - b)];
+  const i = Math.max(0, order.indexOf(tabs.active));
+  showTab(order[(i + step + order.length) % order.length]);
 }
 
 function sessionFor(sender) {
@@ -424,47 +396,47 @@ function sessionFor(sender) {
   return null;
 }
 
-// ------------------------------------------------------------------ dashboard
+// ------------------------------------------------------------------ main window
 
-function openDashboard() {
-  if (dashboard && !dashboard.isDestroyed()) {
-    if (dashboard.isMinimized()) dashboard.restore();
-    dashboard.show();
-    dashboard.focus();
-    return dashboard;
-  }
-  const saved = store.data.windows.dashboard;
-  const b = saved && isOnScreen(saved) ? saved : { width: 1040, height: 780 };
-  dashboard = new BrowserWindow(Object.assign({}, b, {
-    minWidth: 420, minHeight: 480, title: 'Relevo', icon: ICON, autoHideMenuBar: true, show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#191817' : '#f6f4ef',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true }
+function createMain() {
+  const saved = store.data.windows.main;
+  const wa = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(1440, Math.round(wa.width * 0.92));
+  const height = Math.min(980, Math.round(wa.height * 0.92));
+  const b = saved && isOnScreen(saved) ? saved
+    : { x: wa.x + Math.round((wa.width - width) / 2), y: wa.y + Math.round((wa.height - height) / 2), width, height };
+  main = new BrowserWindow(Object.assign({}, b, {
+    minWidth: 640, minHeight: 480, title: 'Relevo', icon: ICON, autoHideMenuBar: true, show: false,
+    backgroundColor: bgColor(), webPreferences: ownPagePrefs()
   }));
-  attachContextMenu(dashboard.webContents);
-  dashboard.loadFile(path.join(UI, 'dashboard.html'));
-  dashboard.once('ready-to-show', () => dashboard.show());
+  main.on('page-title-updated', (e) => e.preventDefault());
+  attachContextMenu(main.webContents);
+  main.loadFile(path.join(UI, 'shell.html'));
+  dash = new WebContentsView({ webPreferences: ownPagePrefs() });
+  dash.setBackgroundColor(bgColor());
+  main.contentView.addChildView(dash);
+  attachContextMenu(dash.webContents);
+  dash.webContents.loadFile(path.join(UI, 'dashboard.html'));
+  main.once('ready-to-show', () => (store.data.windows.mainMaximized ? main.maximize() : main.show()));
   const save = () => {
-    if (dashboard.isDestroyed() || dashboard.isMinimized() || dashboard.isMaximized()) return;
-    store.data.windows.dashboard = dashboard.getBounds();
+    if (main.isDestroyed() || main.isMinimized()) return;
+    store.data.windows.mainMaximized = main.isMaximized();
+    if (!main.isMaximized()) store.data.windows.main = main.getBounds();
     store.write();
   };
-  dashboard.on('resized', save);
-  dashboard.on('moved', save);
-  dashboard.on('closed', () => { dashboard = null; });
-  return dashboard;
+  for (const ev of ['resize', 'maximize', 'unmaximize', 'restore']) main.on(ev, relayout);
+  for (const ev of ['resized', 'moved', 'maximize', 'unmaximize']) main.on(ev, save);
+  main.on('closed', () => { main = null; });
+  relayout();
 }
 
 function broadcast() {
   const payload = store.data;
-  if (dashboard && !dashboard.isDestroyed()) dashboard.webContents.send('data', payload);
-  for (const s of sessions.values()) {
-    s.send('data', payload);
-    const a = model.account(store.data, s.slot);
-    if (a && !s.win.isDestroyed() && !s.win.getTitle().startsWith(a.name)) s.win.setTitle('Relevo · ' + a.name);
-  }
+  for (const v of [main, dash]) if (v && !v.webContents.isDestroyed()) v.webContents.send('data', payload);
+  for (const s of sessions.values()) s.send('data', payload);
+  sendTabs();
 }
 
-// ------------------------------------------------------------------ pauses
 
 function schedulePauses() {
   for (const t of pauseTimers.values()) clearTimeout(t);
@@ -564,7 +536,7 @@ function registerIpc() {
     return { path: exe || '', name: chrome.browserName(exe), custom: !!store.data.browserPath };
   });
   handle('browser:choose', async (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
+    const win = main;
     const opts = { title: 'Elegir navegador (chrome.exe o msedge.exe)', properties: ['openFile'],
       filters: process.platform === 'win32' ? [{ name: 'Programa', extensions: ['exe'] }] : [] };
     const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts));
@@ -576,8 +548,7 @@ function registerIpc() {
   // Accounts / windows.
   handle('account:save', (e, fields) => store.edit((d) => model.upsertAccount(d, fields)).slot);
   handle('account:delete', async (e, slot) => {
-    const s = sessions.get(slot);
-    if (s) s.win.close();
+    closePane(slot);
     await session.fromPartition(partitionOf(slot)).clearStorageData();
     await session.fromPartition(partitionOf(slot)).clearCache();
     try {
@@ -609,14 +580,15 @@ function registerIpc() {
     openSession(slot);
   });
   handle('account:open', (e, slot, mode) => {
-    const beside = mode === 'side' ? BrowserWindow.fromWebContents(e.sender) || (sessionFor(e.sender) || {}).win : null;
+    const from = sessionFor(e.sender);
+    const beside = mode === 'side' ? (from ? from.slot : tabs.recent.find((x) => x !== slot)) : 0;
     openSession(slot, { beside });
   });
   handle('account:open-all', () => {
     const now = Date.now();
     const list = model.sortedAccounts(store.data).filter((a) => !core.isPaused(a, now));
-    const cells = gridCells(Math.max(1, list.length));
-    list.forEach((a, i) => openSession(a.slot, { region: list.length > 1 ? cells[i] : null }));
+    for (const a of list) openSession(a.slot);
+    if (list.length > 1) tileSessions();
     return list.length;
   });
   handle('tile', () => tileSessions());
@@ -664,14 +636,13 @@ function registerIpc() {
   handle('project:transfer', (e, id, fromSlot, toSlot, pauseMs, side) => {
     const until = store.edit((d) => model.transfer(d, id, fromSlot, toSlot, pauseMs || 0));
     if (until) schedulePauses();
-    const from = sessions.get(fromSlot);
-    openSession(toSlot, { beside: side ? (from ? from.win : BrowserWindow.fromWebContents(e.sender)) : null });
+    openSession(toSlot, { beside: side ? fromSlot : 0 });
   });
   handle('project:import', (e, text) => store.edit((d) => model.importText(d, text)).name);
   handle('project:export', async (e, id) => {
     const p = model.project(store.data, id);
     if (!p) throw new Error('Proyecto no encontrado');
-    const win = BrowserWindow.fromWebContents(e.sender);
+    const win = main;
     const opts = {
       title: 'Exportar proyecto', defaultPath: p.name.replace(/[\\/:*?"<>|]/g, '_') + '.relevo.json',
       filters: [{ name: 'Proyecto Relevo', extensions: ['json'] }]
@@ -682,14 +653,27 @@ function registerIpc() {
     return r.filePath;
   });
   handle('project:import-file', async (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
+    const win = main;
     const opts = { properties: ['openFile'], filters: [{ name: 'Proyecto Relevo', extensions: ['json', 'txt', 'md'] }] };
     const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts));
     if (r.canceled || !r.filePaths.length) return null;
     const text = fs.readFileSync(r.filePaths[0], 'utf8');
     return store.edit((d) => model.importText(d, text)).name;
   });
-  handle('dashboard', () => { openDashboard(); });
+  handle('dashboard', () => showTab(0));
+
+  // Tab strip.
+  handle('tabs', () => tabState());
+  handle('tab:show', (e, slot) => { if (slot) openSession(slot); else showTab(0); });
+  handle('tab:close', (e, slot) => closePane(slot));
+  handle('tab:mode', (e, mode) => {
+    if (!['single', 'split', 'grid'].includes(mode)) throw new Error('modo desconocido');
+    showTab(tabs.active || tabs.recent[0] || 0, mode);
+  });
+  handle('tab:add', () => {
+    showTab(0);
+    dash.webContents.send('command', 'add-account');
+  });
 
   // Toolbar of a session window.
   handle('bar:height', (e, h) => {
@@ -772,11 +756,9 @@ function registerIpc() {
         { label: 'Nuevo chat', click: () => s.openBrowser(core.URL_CHAT) },
         { label: 'Claude Code', click: () => s.openBrowser(core.URL_CODE) },
         { type: 'separator' },
-        { label: 'Panel principal', click: () => openDashboard() },
-        { label: 'Abrir otra cuenta al lado…', click: () => s.send('command', 'open-beside') },
-        { label: 'Organizar en mosaico', click: () => tileSessions() },
-        { type: 'checkbox', label: 'Mantener esta barra siempre visible', checked: s.win.isAlwaysOnTop(),
-          click: (item) => s.win.setAlwaysOnTop(item.checked) },
+        { label: 'Panel principal', click: () => showTab(0) },
+        { label: 'Ver otra cuenta al lado…', click: () => s.send('command', 'open-beside') },
+        { label: 'Ver todas en mosaico', click: () => tileSessions() },
         { type: 'separator' },
         { label: 'Pausar esta cuenta…', click: () => s.send('command', 'pause') },
         { label: 'Pegar estado a mano…', click: () => s.send('command', 'manual-state') },
@@ -786,7 +768,7 @@ function registerIpc() {
         } },
         { type: 'separator' },
         { label: 'Borrar el perfil del navegador de esta cuenta…', click: () => s.send('command', 'logout') },
-        { label: 'Cerrar esta barra', click: () => s.win.close() }
+        { label: 'Cerrar pestaña', click: () => closePane(s.slot) }
       ]).popup();
       return;
     }
@@ -796,9 +778,9 @@ function registerIpc() {
       { label: 'Claude Code', click: () => wc.loadURL(core.URL_CODE) },
       { label: 'Página de inicio de la cuenta', click: () => wc.loadURL((a && a.startUrl) || core.URL_CHAT) },
       { type: 'separator' },
-      { label: 'Panel principal', click: () => openDashboard() },
-      { label: 'Abrir otra cuenta al lado…', click: () => s.send('command', 'open-beside') },
-      { label: 'Organizar ventanas en mosaico', click: () => tileSessions() },
+      { label: 'Panel principal', click: () => showTab(0) },
+      { label: 'Ver otra cuenta al lado…', click: () => s.send('command', 'open-beside') },
+      { label: 'Ver todas en mosaico', click: () => tileSessions() },
       { type: 'separator' },
       { label: 'Pausar esta cuenta…', click: () => s.send('command', 'pause') },
       { label: 'Pegar estado a mano…', click: () => s.send('command', 'manual-state') },
@@ -814,24 +796,23 @@ function registerIpc() {
       { label: 'Tamaño normal', click: () => wc.setZoomLevel(0) },
       { type: 'separator' },
       { label: 'Cerrar sesión de esta cuenta…', click: () => s.send('command', 'logout') },
-      { label: 'Cerrar ventana', click: () => s.win.close() }
+      { label: 'Cerrar pestaña', click: () => closePane(s.slot) }
     ]).popup();
   });
 }
 
 // ------------------------------------------------------------------ application menu
 
-function focusedSession() {
-  for (const s of sessions.values()) if (!s.win.isDestroyed() && s.win.isFocused()) return s;
-  return null;
-}
+const focusedSession = () => sessions.get(tabs.active) || null;
 
 function buildAppMenu() {
   const onSite = (fn) => () => { const s = focusedSession(); if (s && s.site) fn(s.site.webContents, s); };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Archivo', submenu: [
-      { label: 'Panel principal', accelerator: 'CmdOrCtrl+Shift+H', click: () => openDashboard() },
-      { label: 'Organizar ventanas en mosaico', accelerator: 'CmdOrCtrl+Shift+M', click: () => tileSessions() },
+      { label: 'Panel principal', accelerator: 'CmdOrCtrl+Shift+H', click: () => showTab(0) },
+      { label: 'Ver todas las cuentas en mosaico', accelerator: 'CmdOrCtrl+Shift+M', click: () => tileSessions() },
+      { label: 'Pestaña siguiente', accelerator: 'Ctrl+Tab', click: () => cycleTab(1) },
+      { label: 'Pestaña anterior', accelerator: 'Ctrl+Shift+Tab', click: () => cycleTab(-1) },
       { type: 'separator' },
       { role: 'quit', label: 'Salir' }
     ] },
@@ -853,7 +834,7 @@ function buildAppMenu() {
       { label: 'Herramientas de desarrollo', accelerator: 'CmdOrCtrl+Shift+I', click: () => {
         const s = focusedSession();
         if (s && s.site) s.site.webContents.openDevTools({ mode: 'detach' });
-        else if (dashboard && dashboard.isFocused()) dashboard.webContents.openDevTools({ mode: 'detach' });
+        else if (!tabs.active) dash.webContents.openDevTools({ mode: 'detach' });
       } }
     ] }
   ]));
@@ -864,7 +845,7 @@ function buildAppMenu() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => openDashboard());
+  app.on('second-instance', () => focusMain());
   app.whenReady().then(() => {
     if (process.platform === 'win32') app.setAppUserModelId('io.github.lancaster2995.relevo');
     store = new Store(path.join(app.getPath('userData'), 'relevo.json'));
@@ -873,7 +854,7 @@ if (!app.requestSingleInstanceLock()) {
     buildAppMenu();
     schedulePauses();
     store.onChange(() => schedulePauses());
-    openDashboard();
+    createMain();
   });
   app.on('window-all-closed', () => app.quit());
 }

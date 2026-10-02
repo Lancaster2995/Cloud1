@@ -59,7 +59,7 @@
     if (!data.accounts.length) {
       content.appendChild(h('div.card.empty', { style: { marginBottom: '14px' } },
         h('h3', 'Empieza agregando tus cuentas'),
-        h('p.muted', 'Cada cuenta abre su propia ventana con la sesión aislada (como perfiles separados de Chrome). Agrega al menos dos para poder pasar un proyecto de una a otra.'),
+        h('p.muted', 'Cada cuenta se abre en su propia pestaña de Relevo con la sesión aislada (como perfiles separados de Chrome). Agrega al menos dos para poder pasar un proyecto de una a otra.'),
         h('div.buttons', h('button.btn', { onclick: () => { view.tab = 'accounts'; render(true); } }, 'Ir a Cuentas'))));
     }
     const list = projects();
@@ -143,7 +143,7 @@
         : ' · aún no hay estado guardado: se enviará el prompt de inicio.')),
       field('PASAR A', target),
       pause ? field('PAUSAR «' + from.name + '» (límite alcanzado)', pause) : null,
-      h('label.check', side, 'Abrir al lado (mitad de la pantalla cada una)'));
+      h('label.check', side, 'Ver las dos cuentas lado a lado'));
     modal('Pasar proyecto a otra cuenta', body, [
       { label: 'Cancelar' },
       { label: 'Pasar', kind: 'primary', onclick: () => api('project:transfer', id, fromSlot, Number(target.value), pause ? Number(pause.value) : 0, side.checked) }
@@ -212,7 +212,7 @@
         h('button.btn', { onclick: () => copy('Prompt de checkpoint', C.checkpoint(p)) }, 'Copiar «Pedir estado»'),
         h('button.btn.quiet', { onclick: () => showText('Prompt', C.next(p)) }, 'Ver prompt'))));
 
-    const state = h('textarea.mono.state', { placeholder: 'Aún no hay estado. Pulsa «Pedir estado» en la ventana de la cuenta, o pega aquí el bloque.', value: p.state });
+    const state = h('textarea.mono.state', { placeholder: 'Aún no hay estado. Pulsa «Pedir estado» en la pestaña de la cuenta, o pega aquí el bloque.', value: p.state });
     left.appendChild(h('div.card',
       h('h3', 'Estado actual'),
       h('p.muted', 'Bloque <<<ESTADO … ESTADO>>> que se envía en el traspaso. Puedes editarlo o pegar uno nuevo.'),
@@ -287,12 +287,12 @@
           toast(e.message, 6000);
         }
       } }, 'Abrir disponibles'),
-      h('button.btn', { onclick: async () => { const n = await api('tile'); toast(n ? 'Ventanas organizadas en mosaico' : 'No hay ventanas de cuentas abiertas'); } }, 'Organizar en mosaico')));
+      h('button.btn', { onclick: async () => { const n = await api('tile'); if (!n) toast('No hay cuentas abiertas'); } }, 'Ver todas en mosaico')));
     const list = accounts();
     if (!list.length) {
       content.appendChild(h('div.card.empty',
         h('h3', 'Agrega tu primera cuenta'),
-        h('p.muted', 'Cada cuenta usa su propia ventana con cookies separadas: puedes tener varias cuentas de Claude abiertas al mismo tiempo, una al lado de la otra. Después de agregarla, pulsa Abrir e inicia sesión.')));
+        h('p.muted', 'Cada cuenta se abre en su propia pestaña con cookies separadas: puedes tener varias cuentas de Claude abiertas al mismo tiempo y verlas una al lado de la otra. Después de agregarla, pulsa Abrir e inicia sesión.')));
       return;
     }
     const grid = h('div.grid');
@@ -317,11 +317,11 @@
     const p = project(a.activeProjectId);
     const info = (p ? 'Proyecto: ' + p.name + ' (' + p.progress + '%)' : 'Sin proyecto activo') + ' · activa ' + C.ago(a.lastActive)
       + (a.startUrl === C.URL_CODE ? ' · Claude Code' : '')
-      + (a.browser === 'chrome' ? ' · se abre en el navegador' : ' · ventana integrada');
+      + (a.browser === 'chrome' ? ' · se abre en el navegador externo' : ' · dentro de Relevo');
     return h('div.card.acard',
       h('div.head', h('span.dot', { style: { background: colorOf(a) } }),
         h('div.grow', h('h3', a.name), a.note ? h('div.muted', a.note) : null),
-        h('span.muted', 'Ventana ' + a.slot)),
+        h('span.muted', '#' + a.slot)),
       status,
       h('div.muted', info),
       h('div.buttons',
@@ -334,21 +334,20 @@
           ? 'Se borrará el perfil del navegador de esta cuenta (cookies, historial y sesión). Cierra antes sus ventanas del navegador.'
           : 'Se borrarán las cookies y los datos de navegación de esta cuenta en este equipo.'), [
           { label: 'Cancelar' }, { label: 'Cerrar sesión', kind: 'primary', onclick: async () => { await api('account:logout', a.slot); toast('Sesión cerrada'); } }]) }, 'Cerrar sesión'),
-        h('button.btn.quiet', { onclick: () => modal('Eliminar «' + a.name + '»', h('p', 'Se cerrará su ventana y se borrarán sus datos de sesión. Los proyectos se conservan.'), [
+        h('button.btn.quiet', { onclick: () => modal('Eliminar «' + a.name + '»', h('p', 'Se cerrará su pestaña y se borrarán sus datos de sesión. Los proyectos se conservan.'), [
           { label: 'Cancelar' }, { label: 'Eliminar', kind: 'primary', onclick: () => api('account:delete', a.slot) }]) }, 'Eliminar')));
   }
 
   function accountDialog(a) {
     const browser = h('select',
-      h('option', { value: 'chrome' }, 'Navegador (Chrome o Edge) con un perfil propio — permite iniciar sesión con Google'),
-      h('option', { value: 'integrated' }, 'Ventana integrada de Relevo — iniciar sesión con correo'));
-    browser.value = a ? (a.browser || 'integrated') : 'chrome';
+      h('option', { value: 'integrated' }, 'Dentro de Relevo (pestaña) — iniciar sesión con correo'),
+      h('option', { value: 'chrome' }, 'Navegador externo (Chrome o Edge) — solo si necesitas «Continuar con Google»'));
+    browser.value = a ? (a.browser || 'integrated') : 'integrated';
     const browserNote = h('p.muted', { style: { margin: '6px 0 0' } });
     api('browser:info').then((info) => {
       browserNote.textContent = info.path
-        ? 'Navegador detectado: ' + info.name + '. Cada cuenta usa su propio perfil, separado de tu navegador habitual.'
-        : 'No encontré Chrome ni Edge instalados: usa la ventana integrada o elige el navegador en Guía y ajustes.';
-      if (!a && !info.path) browser.value = 'integrated';
+        ? 'Con el navegador externo la cuenta usa su propio perfil de ' + info.name + ', pero queda fuera de Relevo. Las cuentas de Google también pueden entrar dentro de Relevo con su correo.'
+        : 'No encontré Chrome ni Edge instalados: usa «Dentro de Relevo» o elige el navegador en Guía y ajustes.';
     });
     const name = h('input', { type: 'text', value: a ? a.name : '', placeholder: 'p. ej. Personal' });
     const note = h('input', { type: 'text', value: a ? a.note : '', placeholder: 'correo, plan, uso… (opcional)' });
@@ -379,7 +378,7 @@
         if (startUrl && !/^https?:\/\//i.test(startUrl)) startUrl = 'https://' + startUrl;
         const slot = await api('account:save', { slot: a ? a.slot : 0, name: name.value, note: note.value, color,
           startUrl: startUrl || C.URL_CHAT, browser: browser.value });
-        if (!a) toast('Cuenta agregada: pulsa Abrir para iniciar sesión (ventana ' + slot + ')');
+        if (!a) toast('Cuenta agregada: ábrela con su pestaña de arriba e inicia sesión');
       } }
     ]);
   }
@@ -425,25 +424,24 @@
     });
     loadBrowser();
     content.appendChild(h('div.guide',
-      section('Ajustes', h('label.check', auto, 'Insertar los prompts directamente en el cuadro de mensaje de las ventanas integradas (si no, solo se copian al portapapeles)'),
+      section('Ajustes', h('label.check', auto, 'Insertar los prompts directamente en el cuadro de mensaje de las cuentas dentro de Relevo (si no, solo se copian al portapapeles)'),
         browserLine,
         h('div.buttons', h('button.btn', { onclick: async () => { const n = await api('browser:choose'); if (n) { toast('Navegador: ' + n); loadBrowser(); } } }, 'Elegir otro navegador…'))),
-      section('Iniciar sesión con Google', h('p', 'Google no permite iniciar sesión dentro de ventanas integradas porque no son un navegador completo. Para las cuentas de Google elige «Abrir con: Navegador» al crear o editar la cuenta: se abre en tu Chrome (o Edge) con un perfil propio para esa cuenta, separado de tu navegador habitual, y Relevo muestra encima una barra con los mismos botones.'),
-        h('p', 'En ese modo los prompts se copian al portapapeles (pega con Ctrl+V en el chat) y para «Guardar» copias la respuesta de Claude con el botón Copiar del bloque de código.'),
-        h('p', 'También puedes usar la ventana integrada entrando con tu correo: escribe tu dirección de Gmail en el campo de correo de Claude y usa el enlace o código que te llega.')),
+      section('Iniciar sesión con Google', h('p', 'Google no permite «Continuar con Google» dentro de apps porque no son un navegador completo. Para que la cuenta quede dentro de Relevo, entra con tu correo: escribe tu dirección de Gmail en el campo de correo de Claude y usa el código o enlace que te llega (un enlace se abre con ⋯ → «Abrir un enlace aquí»).'),
+        h('p', 'Si prefieres «Continuar con Google», elige «Abrir con: Navegador externo» al editar la cuenta: se abre en tu Chrome (o Edge) con un perfil propio, fuera de Relevo, y su pestaña queda con los botones. Ahí los prompts se copian al portapapeles (pega con Ctrl+V) y para «Guardar» copias la respuesta de Claude con el botón Copiar del bloque de código.')),
       section('Cómo funciona', h('ol',
-        h('li', 'Cuentas: agrega cada cuenta de Claude que uses. Cada una tiene su sesión separada: en tu navegador con un perfil propio, o en una ventana integrada de Relevo. Así varias sesiones funcionan al mismo tiempo.'),
-        h('li', 'Inicia sesión una vez en cada cuenta. Si usas «Continuar con Google», la cuenta debe abrirse en el navegador (ver «Iniciar sesión con Google»). En las ventanas integradas entra con tu correo; si te llega un enlace, cópialo y ábrelo con ⋯ → «Abrir un enlace aquí».'),
-        h('li', 'Proyectos: crea un proyecto con su objetivo (y repositorio, si lo hay). En la ventana de una cuenta elige el proyecto en la barra superior y pulsa «📨 Traspaso»: el prompt de inicio queda en el cuadro de mensaje. Revísalo y envíalo.'))),
+        h('li', 'Cuentas: agrega cada cuenta de Claude que uses. Cada una es una pestaña de Relevo con su sesión separada, así varias sesiones funcionan al mismo tiempo.'),
+        h('li', 'Inicia sesión una vez en cada cuenta con tu correo; si te llega un enlace, cópialo y ábrelo con ⋯ → «Abrir un enlace aquí» (ver «Iniciar sesión con Google»).'),
+        h('li', 'Proyectos: crea un proyecto con su objetivo (y repositorio, si lo hay). En la pestaña de una cuenta elige el proyecto en su barra y pulsa «📨 Traspaso»: el prompt de inicio queda en el cuadro de mensaje. Revísalo y envíalo.'))),
       section('Pasar el proyecto a otra cuenta', h('ol',
         h('li', 'Pulsa «🧭 Pedir estado» y envía el mensaje. Claude responde con un bloque <<<ESTADO … ESTADO>>>.'),
         h('li', 'Pulsa «💾 Guardar»: Relevo lee ese bloque de la conversación (o del portapapeles) y lo guarda como checkpoint con su % de progreso.'),
-        h('li', 'Pulsa «⇄ Pasar», elige la cuenta destino y, si la actual llegó a su límite, cuánto pausarla. Relevo registra el traspaso, te avisa cuando la cuenta vuelve a estar disponible y abre la otra ventana (si quieres, al lado).'),
-        h('li', 'En la ventana destino aparece «Traspaso pendiente»: pulsa «Insertar prompt» y envía el mensaje. Repite hasta terminar.'))),
-      section('Varias ventanas a la vez', h('ul',
-        h('li', '«Organizar en mosaico» (', h('span.kbd', 'Ctrl+Shift+M'), ') reparte todas las ventanas de cuentas en la pantalla.'),
-        h('li', '«Al lado» pone dos ventanas en mitades de la pantalla.'),
-        h('li', 'Atajos en una ventana de cuenta: ', h('span.kbd', 'Ctrl+R'), ' recargar, ', h('span.kbd', 'Alt+←'), ' atrás, ',
+        h('li', 'Pulsa «⇄ Pasar», elige la cuenta destino y, si la actual llegó a su límite, cuánto pausarla. Relevo registra el traspaso, te avisa cuando la cuenta vuelve a estar disponible y abre la pestaña de la otra cuenta (si quieres, las dos lado a lado).'),
+        h('li', 'En la cuenta destino aparece «Traspaso pendiente»: pulsa «Insertar prompt» y envía el mensaje. Repite hasta terminar.'))),
+      section('Varias cuentas a la vez', h('ul',
+        h('li', 'Todo queda en una sola ventana: arriba están el Panel y una pestaña por cuenta. ', h('span.kbd', 'Ctrl+Tab'), ' pasa a la siguiente.'),
+        h('li', '«Una», «Dos» y «Todas» (arriba a la derecha) eligen cuántas cuentas ves a la vez: una, dos lado a lado o todas en mosaico (', h('span.kbd', 'Ctrl+Shift+M'), ').'),
+        h('li', 'Atajos en una cuenta: ', h('span.kbd', 'Ctrl+R'), ' recargar, ', h('span.kbd', 'Alt+←'), ' atrás, ',
           h('span.kbd', 'Ctrl+Shift+O'), ' chat nuevo, ', h('span.kbd', 'Ctrl+Shift+H'), ' panel principal.'))),
       section('Con código (Claude Code)', h('p', 'Si el proyecto tiene repositorio, los prompts piden a Claude hacer commit y push de cada avance y mantener el bloque de estado en HANDOFF.md, así el estado viaja también con el código. Puedes poner claude.ai/code como página de inicio de una cuenta.')),
       section('Entre dispositivos', h('p', 'Los proyectos usan el mismo formato en Windows, Android e iPhone: en Detalles → «Copiar JSON» o «Guardar archivo…», y en el otro dispositivo Proyectos → Importar.')),
@@ -460,6 +458,13 @@
     t.addEventListener('click', () => { view.tab = t.dataset.tab; view.projectId = null; render(true); window.scrollTo(0, 0); });
   }
   window.relevo.on('data', (d) => { data = d; render(false); });
+  window.relevo.on('command', (c) => {
+    if (c !== 'add-account') return;
+    view.tab = 'accounts';
+    view.projectId = null;
+    render(true);
+    accountDialog(null);
+  });
   setInterval(() => tickers.forEach((f) => f()), 30000);
   api('data').then((d) => { data = d; render(true); });
 })();

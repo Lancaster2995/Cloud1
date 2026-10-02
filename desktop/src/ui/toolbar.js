@@ -1,4 +1,4 @@
-/* Toolbar on top of each account window: project selector and handoff actions. */
+/* Toolbar on top of each account pane: project selector and handoff actions. */
 (function () {
   'use strict';
   const { h, toast, modal, field, hooks } = window.UI;
@@ -129,15 +129,15 @@
     ]);
   }
 
-  /** Google refuses sign-in inside embedded windows; explain the two ways that work. */
+  /** Google refuses sign-in inside embedded pages; explain the two ways that work. */
   function googleBlocked() {
     modal('Google no permite iniciar sesión aquí', h('div',
-      h('p', 'Google bloquea el inicio de sesión dentro de ventanas integradas porque no son un navegador completo, y Relevo no intenta saltarse esa protección. Tienes dos opciones:'),
+      h('p', 'Google bloquea el inicio de sesión dentro de apps porque no son un navegador completo, y Relevo no intenta saltarse esa protección. Tienes dos opciones:'),
       h('ol',
-        h('li', h('strong', 'Abrir esta cuenta en Chrome'), ' (recomendado): se abre en tu Google Chrome (o Edge) con un perfil propio solo para esta cuenta. Ahí «Continuar con Google» funciona. Relevo queda como una barra encima para copiar los prompts y guardar el estado.'),
-        h('li', h('strong', 'Entrar con tu correo'), ': en la página de Claude escribe tu dirección de Gmail en el campo de correo y continúa; Claude te envía un enlace o código. Si es un enlace, cópialo y ábrelo con ⋯ → «Abrir un enlace aquí».'))), [
-      { label: 'Usar mi correo' },
-      { label: 'Abrir en Chrome', kind: 'primary', onclick: async () => { await api('account:use-chrome', slot); } }
+        h('li', h('strong', 'Entrar con tu correo'), ' (recomendado, todo queda dentro de Relevo): en la página de Claude escribe tu dirección de Gmail en el campo de correo y continúa; Claude te envía un código o enlace. Si es un enlace, cópialo y ábrelo con ⋯ → «Abrir un enlace aquí».'),
+        h('li', h('strong', 'Abrir esta cuenta en Chrome'), ': se abre en tu Google Chrome (o Edge) con un perfil propio, fuera de Relevo. Ahí «Continuar con Google» funciona y esta pestaña queda con los botones para copiar los prompts y guardar el estado.'))), [
+      { label: 'Abrir en Chrome', onclick: async () => { await api('account:use-chrome', slot); } },
+      { label: 'Usar mi correo', kind: 'primary' }
     ]);
   }
 
@@ -181,7 +181,7 @@
       unanswered ? h('p.warn', 'Ojo: Claude aún no respondió al último «Pedir estado»; se pasará el estado guardado anterior.') : null,
       field('PASAR A', target),
       field('PAUSAR «' + account().name + '» (límite alcanzado)', pause),
-      h('label.check', side, 'Abrir al lado (mitad de la pantalla cada una)')), [
+      h('label.check', side, 'Ver las dos cuentas lado a lado')), [
       { label: 'Cancelar' },
       { label: 'Pasar', kind: 'primary', onclick: () => api('project:transfer', id, slot, Number(target.value), Number(pause.value), side.checked) }
     ]);
@@ -194,7 +194,7 @@
         onclick: async () => { dlg.close(); await api('account:open-project', slot, p.id); setTimeout(then, 60); }
       }, p.name + ' · ' + p.progress + '%')),
       h('button.btn', { onclick: () => { dlg.close(); setTimeout(() => newProject(then), 50); } }, '+ Nuevo proyecto…'));
-    dlg = modal('¿En qué proyecto trabaja esta ventana?', list, [{ label: 'Cancelar' }]);
+    dlg = modal('¿En qué proyecto trabaja esta cuenta?', list, [{ label: 'Cancelar' }]);
   }
 
   function newProject(then) {
@@ -255,8 +255,8 @@
   async function openLink() {
     const clip = ((await api('paste')) || '').trim();
     const url = h('input', { type: 'url', value: /^https?:\/\//i.test(clip) ? clip : '', placeholder: 'https://claude.ai/…' });
-    modal('Abrir enlace en esta ventana', h('div',
-      h('p.muted', 'Útil para el enlace de inicio de sesión que llega por correo: cópialo y pégalo aquí para que la sesión se abra en esta cuenta y no en tu navegador.'),
+    modal('Abrir enlace en esta pestaña', h('div',
+      h('p.muted', 'Útil para el enlace de inicio de sesión que llega por correo: cópialo y pégalo aquí para que la sesión se abra en esta cuenta, dentro de Relevo, y no en tu navegador.'),
       url), [
       { label: 'Cancelar' },
       { label: 'Abrir', kind: 'primary', onclick: () => url.value.trim() && api('bar:nav', 'load', url.value.trim()) }
@@ -271,7 +271,7 @@
       return;
     }
     let dlg = null;
-    dlg = modal('Abrir al lado', h('div.list', others.map((a) => h('button.btn', {
+    dlg = modal('Ver al lado', h('div.list', others.map((a) => h('button.btn', {
       onclick: () => { dlg.close(); api('account:open', a.slot, 'side'); }
     }, h('span.dot', { style: { background: a.color } }), C.accountLabel(a, now)))), [{ label: 'Cancelar' }]);
   }
@@ -323,7 +323,6 @@
   $('back').addEventListener('click', () => api('bar:nav', 'back'));
   $('forward').addEventListener('click', () => api('bar:nav', 'forward'));
   $('reload').addEventListener('click', () => api('bar:nav', 'reload'));
-  $('home').addEventListener('click', () => api('dashboard'));
   $('more').addEventListener('click', () => api('bar:menu'));
 
   const COMMANDS = { 'open-beside': openBeside, pause: pauseDialog, 'manual-state': manualState, 'open-link': openLink, logout,
@@ -333,6 +332,11 @@
   window.relevo.on('nav', (n) => { $('back').disabled = !n.canGoBack; $('forward').disabled = !n.canGoForward; });
   window.relevo.on('loading', (on) => { $('loading').hidden = !on; });
   $('openBrowser').addEventListener('click', run(() => api('bar:nav', 'open-browser')));
+  $('hintBrowser').addEventListener('click', run(() => api('bar:nav', 'open-browser')));
+  $('hintInside').addEventListener('click', run(async () => {
+    await api('account:save', { slot, browser: 'integrated' });
+    await api('account:open', slot, 'normal');
+  }));
   if (chromeMode) {
     for (const b of document.querySelectorAll('[data-act]')) {
       const tips = {

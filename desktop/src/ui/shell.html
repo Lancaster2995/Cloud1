@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'">
+  <title>Relevo</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    .strip {
+      height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
+      background: var(--surface2); border-bottom: 1px solid var(--border); user-select: none;
+    }
+    .tabs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab {
+      flex: none; display: flex; align-items: center; gap: 7px; height: 32px; max-width: 210px; padding: 0 6px 0 10px;
+      border: 1px solid transparent; border-radius: 8px; color: var(--text2); cursor: pointer;
+    }
+    .tab:hover { background: var(--surface); }
+    .tab.open { color: var(--text); }
+    .tab.on { background: var(--surface); border-color: var(--border); font-weight: 600; }
+    .tab.panel { padding-right: 10px; }
+    .tab .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tab .badge { font-size: 11px; font-weight: 600; color: var(--warn); }
+    .tab .x {
+      border: 0; background: transparent; width: 20px; height: 20px; padding: 0; border-radius: 5px;
+      color: var(--text2); font-size: 15px; line-height: 1; cursor: pointer;
+    }
+    .tab .x:hover { background: var(--surface2); color: var(--text); }
+    .sep { flex: none; width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+    .add {
+      flex: none; width: 30px; height: 30px; border-radius: 8px; border: 1px dashed var(--border);
+      background: transparent; color: var(--text2); font-size: 17px; cursor: pointer;
+    }
+    .add:hover { background: var(--surface); color: var(--text); }
+    .modes { flex: none; display: flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
+    .modes button { border: 0; background: transparent; padding: 5px 12px; color: var(--text2); cursor: pointer; }
+    .modes button + button { border-left: 1px solid var(--border); }
+    .modes button[aria-pressed=true] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+    .tab:focus-visible, .modes button:focus-visible, .add:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    /* The area below the strip is covered by the dashboard or the accounts: toasts go on top. */
+    .toast { top: 4px; bottom: auto; }
+  </style>
+</head>
+<body>
+  <header class="strip">
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Panel y cuentas"></nav>
+    <div class="modes" role="group" aria-label="Cuántas cuentas ver a la vez">
+      <button data-mode="single" title="Una cuenta a la vez">Una</button>
+      <button data-mode="split" title="Dos cuentas lado a lado">Dos</button>
+      <button data-mode="grid" title="Todas las cuentas abiertas en mosaico (Ctrl+Shift+M)">Todas</button>
+    </div>
+  </header>
+  <script src="../shared/core.js"></script>
+  <script src="common.js"></script>
+  <script src="shell.js"></script>
+</body>
+</html>

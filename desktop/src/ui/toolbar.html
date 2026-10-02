@@ -21,14 +21,13 @@
         <span class="dot" id="dot"></span>
         <strong id="account"></strong>
       </div>
-      <select id="project" title="Proyecto en el que trabaja esta ventana"></select>
+      <select id="project" title="Proyecto en el que trabaja esta cuenta"></select>
       <div class="actions">
         <button class="btn" data-act="handoff" title="Inserta el prompt de inicio o de continuación">📨 Traspaso</button>
         <button class="btn" data-act="checkpoint" title="Pide a Claude el bloque de estado">🧭 Pedir estado</button>
         <button class="btn" data-act="save" title="Guarda el último bloque de estado de la conversación">💾 Guardar</button>
         <button class="btn primary" data-act="transfer" title="Pasa el proyecto a otra cuenta">⇄ Pasar</button>
       </div>
-      <button class="btn icon" id="home" title="Panel principal (Ctrl+Shift+H)">▦</button>
       <button class="btn icon" id="more" title="Más opciones">⋯</button>
     </div>
     <div class="status" id="status" role="status" hidden></div>
@@ -40,6 +39,15 @@
     </div>
     <div class="loading" id="loading" hidden></div>
   </div>
+  <section class="chrome-hint" id="chromeHint">
+    <h2>Esta cuenta se abre en el navegador</h2>
+    <p class="muted">Está en tu Chrome (o Edge) con un perfil propio, fuera de Relevo, porque ahí funciona «Continuar con Google». Los botones de arriba siguen funcionando: los prompts se copian para pegarlos con Ctrl+V y «Guardar» lee el bloque de estado que copies de la respuesta de Claude.</p>
+    <div class="buttons">
+      <button class="btn primary" id="hintBrowser">🌐 Mostrar el navegador</button>
+      <button class="btn" id="hintInside">Abrir dentro de Relevo</button>
+    </div>
+    <p class="muted">Para tenerla dentro de Relevo como las demás, entra con tu correo: escribe tu dirección de Gmail en el campo de correo de Claude y usa el código o enlace que te llega.</p>
+  </section>
   <script src="../shared/core.js"></script>
   <script src="common.js"></script>
   <script src="toolbar.js"></script>

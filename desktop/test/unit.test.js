@@ -142,3 +142,21 @@ test('model: accounts open in the browser or in an integrated window', () => {
   model.upsertAccount(d, { slot: a.slot, browser: 'otra-cosa' });
   assert.equal(a.browser, 'integrated');
 });
+
+test('layout: dashboard, one, two side by side or all open accounts', () => {
+  const tabs = { active: 0, mode: 'single', recent: [3, 1, 2] };
+  assert.deepEqual(model.shownSlots(tabs), []);
+  tabs.active = 3;
+  assert.deepEqual(model.shownSlots(tabs), [3]);
+  tabs.mode = 'split';
+  assert.deepEqual(model.shownSlots(tabs), [1, 3]);
+  tabs.mode = 'grid';
+  assert.deepEqual(model.shownSlots(tabs), [1, 2, 3]);
+
+  const area = { x: 0, y: 40, width: 1000, height: 600 };
+  assert.deepEqual(model.gridCells(area, 1), [area]);
+  const [a, b, c] = model.gridCells(area, 3);
+  assert.deepEqual([a.x, a.y, a.width, a.height], [0, 40, 499, 299]);
+  assert.deepEqual([b.x, b.y], [501, 40]);
+  assert.deepEqual([c.x, c.y, c.width, c.height], [0, 341, 1000, 299]); // last row uses the full width
+});

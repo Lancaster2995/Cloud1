@@ -1,9 +1,9 @@
 'use strict';
 /*
- * Drives the real Electron app: dashboard, two account windows, prompt insertion, saving the
- * status block, transfer with banner in the destination, cookie isolation and tiling.
- * A local chat page stands in for claude.ai. Screenshots go to test-results/screens.
- * Linux: run under xvfb-run.
+ * Drives the real Electron app: one window with the tab strip, the dashboard and two accounts as
+ * tabs, prompt insertion, saving the status block, transfer with banner in the destination,
+ * cookie isolation and the side-by-side / grid layouts. A local chat page stands in for
+ * claude.ai. Screenshots go to test-results/screens. Linux: run under xvfb-run.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -49,52 +49,63 @@ async function pageMatching(app, pred, timeout = 15000) {
   throw new Error('no apareció la página esperada');
 }
 
-/** Captures a whole account window (toolbar view + site view) as one PNG. */
-async function shotWindow(app, dash, slot, file) {
-  const parts = await app.evaluate(async ({ BaseWindow }, s) => {
-    const win = BaseWindow.getAllWindows().find((w) => w.getTitle().includes('Relevo') && w.contentView.children.length === 2 &&
-      w.contentView.children[1].webContents.getURL().includes('slot=' + s));
-    const [site, bar] = win.contentView.children;
-    const b = bar.getBounds();
-    const barImg = await bar.webContents.capturePage({ x: 0, y: 0, width: b.width, height: b.height });
-    const siteImg = await site.webContents.capturePage();
-    return { bar: barImg.toDataURL(), site: siteImg.toDataURL(), barH: b.height };
-  }, slot);
+/** Starts Relevo with a 1280x800 window and returns its pages: tab strip and dashboard. */
+async function launch(env) {
+  const app = await electron.launch({ args: [ROOT, '--no-sandbox'], env: Object.assign({}, process.env, env) });
+  await app.firstWindow();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1280, 800));
+  const shell = await pageMatching(app, (u) => u.includes('shell.html'));
+  const dash = await pageMatching(app, (u) => u.includes('dashboard.html'));
+  return { app, shell, dash };
+}
+
+/** Captures the whole Relevo window (tab strip + whatever is on screen below it) as one PNG. */
+async function shot(app, dash, file) {
+  const parts = await app.evaluate(async ({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    const { width, height } = win.getContentBounds();
+    const shots = [{ x: 0, y: 0, w: width, h: height, src: (await win.webContents.capturePage()).toDataURL() }];
+    for (const v of win.contentView.children) {
+      const b = v.getBounds();
+      if (!v.getVisible() || !v.webContents || !b.width || !b.height) continue;
+      const img = await v.webContents.capturePage({ x: 0, y: 0, width: b.width, height: b.height });
+      shots.push({ x: b.x, y: b.y, w: b.width, h: b.height, src: img.toDataURL() });
+    }
+    return { width, height, shots };
+  });
   const png = await dash.evaluate(async (p) => {
-    const load = (src) => new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = src; });
-    const [bar, site] = await Promise.all([load(p.bar), load(p.site)]);
     const c = document.createElement('canvas');
-    c.width = Math.max(bar.width, site.width);
-    c.height = bar.height + site.height;
+    c.width = p.width;
+    c.height = p.height;
     const g = c.getContext('2d');
-    g.drawImage(site, 0, bar.height);
-    g.drawImage(bar, 0, 0);
+    for (const s of p.shots) {
+      const img = await new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.src = s.src; });
+      g.drawImage(img, s.x, s.y, s.w, s.h);
+    }
     return c.toDataURL('image/png');
   }, parts);
   fs.writeFileSync(path.join(SHOTS, file), Buffer.from(png.split(',')[1], 'base64'));
 }
 
-test('handoff between two isolated account windows', async () => {
+const tabsOf = (page) => page.evaluate(() => window.relevo.call('tabs'));
+
+test('handoff between two accounts as tabs of the one Relevo window', async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relevo-e2e-'));
   seed(dir);
-  const app = await electron.launch({
-    args: [ROOT, '--no-sandbox'],
-    env: Object.assign({}, process.env, { RELEVO_USER_DATA: dir })
-  });
+  const { app, shell, dash } = await launch({ RELEVO_USER_DATA: dir });
   try {
-    const dash = await app.firstWindow();
-    await dash.setViewportSize({ width: 1100, height: 760 }).catch(() => {});
     await dash.waitForSelector('text=App de inventario');
-    await dash.screenshot({ path: path.join(SHOTS, 'desktop-1-proyectos.png') });
+    await shell.waitForSelector('.tab:has-text("Respaldo") .badge');
+    await shot(app, dash, 'desktop-1-proyectos.png');
 
     await dash.click('.tab[data-tab=accounts]');
     await dash.waitForSelector('text=Respaldo');
     assert.ok(await dash.isVisible('text=En pausa'));
-    await dash.screenshot({ path: path.join(SHOTS, 'desktop-2-cuentas.png') });
+    await shot(app, dash, 'desktop-2-cuentas.png');
 
-    // Open account 1 and insert the start prompt.
-    await dash.evaluate(() => window.relevo.call('account:open', 1, 'normal'));
+    // Open account 1 from its tab and insert the start prompt.
+    await shell.click('.tab:has-text("Personal")');
     const bar1 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1'));
     const site1 = await pageMatching(app, (u) => u.includes('chat.html?who=1'));
     await site1.waitForSelector('.ProseMirror');
@@ -114,12 +125,12 @@ test('handoff between two isolated account windows', async () => {
     let p = data.projects.find((x) => x.id === 'p1');
     assert.equal(p.progress, 60);
     assert.ok(p.state.includes('SIGUIENTES_PASOS'));
-    await shotWindow(app, dash, 1, 'desktop-3-ventana-cuenta.png');
+    await shot(app, dash, 'desktop-3-ventana-cuenta.png');
 
     // Pass it to account 2.
     await bar1.click('[data-act=transfer]');
     await bar1.waitForSelector('.dialog');
-    await bar1.screenshot({ path: path.join(SHOTS, 'desktop-4-pasar.png') });
+    await shot(app, dash, 'desktop-4-pasar.png');
     await bar1.selectOption('.dialog select >> nth=0', '2');
     await bar1.click('.dialog .btn.primary');
     const bar2 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=2'));
@@ -135,6 +146,13 @@ test('handoff between two isolated account windows', async () => {
     assert.equal(p.pendingSlot, 0);
     assert.equal(p.history[p.history.length - 1].type, 'transfer');
 
+    // Everything stays inside the one window: account 2 in front, account 1 open in its tab.
+    assert.equal(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length), 1);
+    let t = await tabsOf(shell);
+    assert.equal(t.active, 2);
+    assert.deepEqual(t.open.sort(), [1, 2]);
+    assert.deepEqual(t.shown, [2]);
+
     // Each account keeps its own cookies.
     const iso = await app.evaluate(async ({ session }) => {
       const s1 = session.fromPartition('persist:relevo-s1');
@@ -144,15 +162,26 @@ test('handoff between two isolated account windows', async () => {
     });
     assert.deepEqual(iso, { one: 1, two: 0 });
 
-    // Tile both windows.
+    // Side by side, then all in a grid.
+    await shell.click('[data-mode=split]');
+    assert.deepEqual((await tabsOf(shell)).shown, [1, 2]);
     assert.equal(await dash.evaluate(() => window.relevo.call('tile')), 2);
-    await shotWindow(app, dash, 2, 'desktop-5-traspaso-recibido.png');
+    assert.equal((await tabsOf(shell)).mode, 'grid');
+    await shot(app, dash, 'desktop-5-traspaso-recibido.png');
+
+    // Closing a tab leaves the other account on screen.
+    await shell.click('.tab:has-text("Personal") .x');
+    t = await tabsOf(shell);
+    assert.deepEqual(t.open, [2]);
+    assert.equal(t.active, 2);
 
     // Project detail in the dashboard.
+    await shell.click('.tab.panel');
+    assert.equal((await tabsOf(shell)).active, 0);
     await dash.click('.tab[data-tab=projects]');
     await dash.click('.pcard:has-text("App de inventario") >> text=Detalles');
     await dash.waitForSelector('text=Historial');
-    await dash.screenshot({ path: path.join(SHOTS, 'desktop-6-proyecto.png') });
+    await shot(app, dash, 'desktop-6-proyecto.png');
   } finally {
     await app.close();
   }
@@ -177,22 +206,19 @@ test('account in the real browser (own profile) and Google sign-in notice', asyn
   respaldo.activeProjectId = 'p2';
   fs.writeFileSync(file, JSON.stringify(data));
 
-  const app = await electron.launch({
-    args: [ROOT, '--no-sandbox'],
-    env: Object.assign({}, process.env, {
-      RELEVO_USER_DATA: dir, RELEVO_BROWSER: browser, RELEVO_BROWSER_ARGS: '--no-sandbox --disable-gpu --password-store=basic'
-    })
+  const { app, dash } = await launch({
+    RELEVO_USER_DATA: dir, RELEVO_BROWSER: browser, RELEVO_BROWSER_ARGS: '--no-sandbox --disable-gpu --password-store=basic'
   });
   const profile = path.join(dir, 'chrome-profiles', 's3');
   try {
-    const dash = await app.firstWindow();
     await dash.waitForSelector('text=App de inventario');
 
-    // Opening the account starts the browser with the account's own profile and shows the bar.
+    // Opening the account starts the browser with the account's own profile; its tab shows the bar.
     await dash.evaluate(() => window.relevo.call('account:open', 3, 'normal'));
     const bar = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=3') && u.includes('mode=chrome'));
     await bar.waitForSelector('#account:has-text("Respaldo")');
     assert.ok(await bar.isVisible('#openBrowser'));
+    assert.ok(await bar.isVisible('#chromeHint'));
     assert.equal(await bar.isVisible('#back'), false);
     const deadline = Date.now() + 15000;
     while (!fs.existsSync(path.join(profile, 'Local State')) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
@@ -211,9 +237,9 @@ test('account in the real browser (own profile) and Google sign-in notice', asyn
     await bar.waitForSelector('#status:has-text("Estado guardado desde el portapapeles")');
     const saved = (await dash.evaluate(() => window.relevo.call('data'))).projects.find((x) => x.id === 'p2');
     assert.equal(saved.progress, 70);
-    await bar.screenshot({ path: path.join(SHOTS, 'desktop-7-barra-navegador.png') });
+    await shot(app, dash, 'desktop-7-barra-navegador.png');
 
-    // An integrated window stops Google sign-in and explains the options.
+    // An account inside Relevo stops Google sign-in and explains the options.
     await dash.evaluate(() => window.relevo.call('account:open', 1, 'normal'));
     const bar1 = await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1') && !u.includes('mode=chrome'));
     const site1 = await pageMatching(app, (u) => u.includes('chat.html?who=1'));
@@ -221,10 +247,10 @@ test('account in the real browser (own profile) and Google sign-in notice', asyn
     await site1.evaluate(() => { location.href = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=prueba'; });
     await bar1.waitForSelector('.dialog:has-text("Google no permite iniciar sesión aquí")');
     assert.ok(site1.url().includes('chat.html'), 'la página no salió hacia Google');
-    await bar1.screenshot({ path: path.join(SHOTS, 'desktop-8-google.png') });
+    await shot(app, dash, 'desktop-8-google.png');
 
     // "Abrir en Chrome" switches the account to the browser.
-    await bar1.click('.dialog .btn.primary');
+    await bar1.click('.dialog .btn:has-text("Abrir en Chrome")');
     await pageMatching(app, (u) => u.includes('toolbar.html') && u.includes('slot=1') && u.includes('mode=chrome'));
     const after = (await dash.evaluate(() => window.relevo.call('data'))).accounts.find((a) => a.slot === 1);
     assert.equal(after.browser, 'chrome');

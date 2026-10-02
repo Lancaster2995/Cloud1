@@ -180,7 +180,33 @@ function importText(d, text) {
   return p;
 }
 
+// Layout of the open accounts inside the window (tabs: {active, mode, recent}; recent = open slots, newest first).
+
+/** Slots on screen: none (dashboard), the active one, the two most recent side by side, or all. */
+function shownSlots(tabs) {
+  if (!tabs.active) return [];
+  if (tabs.mode === 'grid') return tabs.recent.slice().sort((a, b) => a - b);
+  if (tabs.mode === 'split') return tabs.recent.slice(0, 2).sort((a, b) => a - b);
+  return [tabs.active];
+}
+
+/** n cells filling `area` row by row; the last row stretches so no cell is left empty. */
+function gridCells(area, n) {
+  const cols = Math.ceil(Math.sqrt(n));
+  const rows = Math.ceil(n / cols);
+  const gap = n > 1 ? 2 : 0;
+  const h = (area.height - gap * (rows - 1)) / rows;
+  return Array.from({ length: n }, (_, i) => {
+    const row = Math.floor(i / cols);
+    const inRow = row === rows - 1 ? n - row * cols : cols;
+    const w = (area.width - gap * (inRow - 1)) / inRow;
+    const col = i - row * cols;
+    return { x: Math.round(area.x + col * (w + gap)), y: Math.round(area.y + row * (h + gap)), width: Math.floor(w), height: Math.floor(h) };
+  });
+}
+
 module.exports = {
   MAX_SLOTS, defaults, account, project, sortedAccounts, sortedProjects, freeSlot, upsertAccount,
-  deleteAccount, createProject, updateProject, deleteProject, saveCheckpoint, transfer, handoffDone, importText
+  deleteAccount, createProject, updateProject, deleteProject, saveCheckpoint, transfer, handoffDone, importText,
+  shownSlots, gridCells
 };
