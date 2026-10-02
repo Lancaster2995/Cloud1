@@ -11,7 +11,7 @@ Trabaja con **varias sesiones de Claude a la vez, cada una con una cuenta distin
 
 | Plataforma | Archivo | Instalación |
 |---|---|---|
-| **Windows 10/11** (64 bits) | [`Relevo-Setup-1.2.2.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-Setup-1.2.2.exe) (instalador) o [`Relevo-1.2.2-portable.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-1.2.2-portable.exe) | [Ver abajo](#windows) |
+| **Windows 10/11** (64 bits) | [`Relevo-Setup-1.2.3.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.3/Relevo-Setup-1.2.3.exe) (instalador) o [`Relevo-1.2.3-portable.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.3/Relevo-1.2.3-portable.exe) | [Ver abajo](#windows) |
 | **iPhone / iPad** (iOS 17 o superior) | [`dist/Relevo.ipa`](dist/Relevo.ipa) o la [release de iOS](https://github.com/Lancaster2995/Cloud1/releases/tag/ios-v1.1.0) | [Ver abajo](#iphone-y-ipad-sin-mac) |
 | **Android 10+** | [`dist/Relevo.apk`](dist/Relevo.apk) o la [release de Android](https://github.com/Lancaster2995/Cloud1/releases/tag/v1.1.0) | Abrir el APK y permitir «Instalar apps desconocidas» |
 
@@ -26,7 +26,7 @@ Los proyectos usan el mismo formato en las tres versiones: exporta el JSON en un
   <img src="docs/screens/desktop-3-ventana-cuenta.png" width="49%" alt="Una cuenta en su pestaña con la barra de traspaso">
 </p>
 
-1. Descarga [`Relevo-Setup-1.2.2.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-Setup-1.2.2.exe) y ejecútalo (o usa la [versión portable](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.2/Relevo-1.2.2-portable.exe), que no se instala). Si ya tenías una versión anterior, se instala encima y conserva tus proyectos.
+1. Descarga [`Relevo-Setup-1.2.3.exe`](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.3/Relevo-Setup-1.2.3.exe) y ejecútalo (o usa la [versión portable](https://github.com/Lancaster2995/Cloud1/releases/download/windows-v1.2.3/Relevo-1.2.3-portable.exe), que no se instala). Si ya tenías una versión anterior, se instala encima y conserva tus proyectos. Desde la 1.2.3, cuando sale una versión nueva aparece el botón **Actualizar a …** en la barra de pestañas, que descarga el instalador.
 2. Como el ejecutable no está firmado, Windows puede mostrar «Windows protegió su PC»: pulsa **Más información → Ejecutar de todas formas**.
 3. En **Cuentas → + Agregar cuenta** (o el **+** de la barra de pestañas) crea una por cada cuenta de Claude. Cada una aparece como pestaña arriba.
 4. Abre su pestaña e inicia sesión una vez con tu correo (también si tu cuenta es de Google: ver [Iniciar sesión con Google](#iniciar-sesión-con-google)).

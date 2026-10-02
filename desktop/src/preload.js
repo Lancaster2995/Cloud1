@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const CALLS = new Set([
-  'data', 'info', 'copy', 'paste', 'external', 'set', 'dashboard', 'tile', 'browser:info', 'browser:choose',
+  'data', 'info', 'update', 'copy', 'paste', 'external', 'set', 'dashboard', 'tile', 'browser:info', 'browser:choose',
   'account:use-chrome', 'tabs', 'tab:show', 'tab:close', 'tab:mode', 'tab:add',
   'account:save', 'account:delete', 'account:logout', 'account:open', 'account:open-all', 'account:pause',
   'account:open-project',

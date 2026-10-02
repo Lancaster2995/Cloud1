@@ -223,3 +223,13 @@ test('a conversation can travel as a state block when Claude cannot answer CHECK
   assert.ok(long.includes('| INICIO') && long.includes('FINAL') && long.includes('se omitió la parte del medio'));
   assert.ok(long.length < 70000);
 });
+
+test('update notice: the newest windows-v release above the installed version', () => {
+  const update = require('../src/update');
+  const rel = (tag, extra) => Object.assign({ tag_name: tag, html_url: 'page/' + tag, assets: [{ name: 'Relevo-Setup-x.exe', browser_download_url: 'exe/' + tag }] }, extra);
+  const list = [rel('relevo-v9.9.9'), rel('ios-v3.0.0'), rel('windows-v1.10.0', { prerelease: true }), rel('windows-v1.2.3'), rel('windows-v1.2.10', { assets: [] }), rel('windows-v1.2.2')];
+  assert.deepEqual(update.pick(list, '1.1.0'), { version: '1.2.10', url: 'page/windows-v1.2.10' });
+  assert.deepEqual(update.pick(list.slice(0, 4), '1.1.0'), { version: '1.2.3', url: 'exe/windows-v1.2.3' });
+  assert.equal(update.pick(list, '1.2.10'), null);
+  assert.equal(update.pick(null, '1.0.0'), null);
+});

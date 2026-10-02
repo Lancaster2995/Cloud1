@@ -55,6 +55,16 @@
     });
   }
   api('info').then((i) => { if (i) document.getElementById('ver').textContent = 'Relevo ' + i.version; });
+  api('update').then((u) => {
+    if (!u) return;
+    const b = document.getElementById('upd');
+    b.textContent = 'Actualizar a ' + u.version;
+    b.onclick = () => {
+      api('external', u.url);
+      toast('Descargando Relevo ' + u.version + ': ábrelo al terminar y cierra Relevo para que se instale encima', 8000);
+    };
+    b.hidden = false;
+  });
   window.relevo.on('data', (d) => { data = d; render(); });
   window.relevo.on('tabs', (t) => { tabs = t; render(); });
   Promise.all([api('data'), api('tabs')]).then(([d, t]) => { data = d || data; tabs = t || tabs; render(); });

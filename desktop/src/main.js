@@ -25,6 +25,7 @@ const model = require('./model');
 const inject = require('./inject');
 const Store = require('./store');
 const chrome = require('./chrome');
+const update = require('./update');
 
 const UI = path.join(__dirname, 'ui');
 const ICON = path.join(__dirname, 'ui', 'icon.png');
@@ -552,6 +553,7 @@ function registerIpc() {
   handle('copy', (e, text) => clipboard.writeText(String(text)));
   handle('paste', async () => String(await clipboard.readText()));
   handle('external', (e, url) => { if (/^https?:/i.test(url)) shell.openExternal(url); });
+  handle('update', () => update.check(app.getVersion()));
   handle('set', (e, key, value) => {
     if (!['autoInsert'].includes(key)) throw new Error('ajuste desconocido');
     store.edit((d) => { d[key] = value; });
