@@ -15,6 +15,8 @@ Trabaja con **varias sesiones de Claude a la vez, cada una con una cuenta distin
 | **iPhone / iPad** (iOS 17 o superior) | [`dist/Relevo.ipa`](dist/Relevo.ipa) o la [release de iOS](https://github.com/Lancaster2995/Cloud1/releases/tag/ios-v1.1.0) | [Ver abajo](#iphone-y-ipad-sin-mac) |
 | **Android 10+** | [`dist/Relevo.apk`](dist/Relevo.apk) o la [release de Android](https://github.com/Lancaster2995/Cloud1/releases/tag/v1.1.0) | Abrir el APK y permitir «Instalar apps desconocidas» |
 
+Para bajar todo de una vez a una carpeta de tu PC (instaladores, IPA, APK y código fuente) usa [`tools/descargar-relevo.ps1`](tools/descargar-relevo.ps1) en PowerShell.
+
 Los proyectos usan el mismo formato en las tres versiones: exporta el JSON en una (Detalles → Exportar / Compartir JSON) e impórtalo en otra (Proyectos → Importar).
 
 ### Windows
